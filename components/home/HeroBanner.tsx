@@ -5,7 +5,7 @@ import { Info, Play, Star } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { FavoriteButton } from "@/components/content/FavoriteButton";
-import { SmartImage } from "@/components/ui/SmartImage";
+import { SmartImage, fallbackColors } from "@/components/ui/SmartImage";
 import { useTmdbMatch } from "@/lib/hooks/useTmdb";
 import type { ContentItem, SeriesItem } from "@/lib/types";
 
@@ -95,21 +95,40 @@ function HeroSlide({ entry }: { entry: HeroEntry }) {
 
   const backdrop = match?.backdrop ?? match?.poster ?? entry.logo;
   const overview = match?.overview;
+  const heroColors = fallbackColors(entry.title);
 
   return (
     <div className="animate-fade-up relative h-[380px] overflow-hidden rounded-3xl border border-white/8 xl:h-[440px] 2xl:h-[500px]">
-      {/* SmartImage kendi kökünde `relative` kullanır; konumlandırmayı sarmalayıcı yapar. */}
-      <div className="absolute inset-0">
-        <SmartImage
-          src={backdrop}
-          alt={entry.title}
-          fallbackText={entry.title}
-          className="h-full w-full"
-          priority
-        />
-      </div>
+      {/*
+        Görsel varsa (TMDB backdrop ya da M3U logosu) onu göster; yoksa başlıktan
+        türetilmiş sinematik bir gradient kullan — boş siyah kutu yerine.
+        SmartImage kendi kökünde `relative` kullanır; konumlandırmayı sarmalayıcı yapar.
+      */}
+      {backdrop ? (
+        <div className="absolute inset-0">
+          <SmartImage
+            src={backdrop}
+            alt={entry.title}
+            fallbackText={entry.title}
+            className="h-full w-full"
+            priority
+          />
+        </div>
+      ) : (
+        <div
+          className="absolute inset-0"
+          style={{
+            // Renk sağda toplanıyor: sol taraf zaten metin için karartılıyor.
+            background: `radial-gradient(130% 120% at 82% 20%, ${heroColors[0]} 0%, ${heroColors[1]} 55%, #08080e 100%)`,
+          }}
+        >
+          <span className="absolute -right-4 bottom-0 select-none text-[190px] font-black leading-none tracking-tighter text-white/10 lg:text-[260px]">
+            {entry.title.slice(0, 1).toLocaleUpperCase("tr-TR")}
+          </span>
+        </div>
+      )}
 
-      <div className="absolute inset-0 bg-gradient-to-r from-ink-950 via-ink-950/85 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-r from-ink-950 via-ink-950/80 to-transparent" />
       <div className="absolute inset-0 bg-gradient-to-t from-ink-950 via-transparent to-transparent" />
 
       <div className="relative flex h-full max-w-[620px] flex-col justify-end p-7 lg:p-10">

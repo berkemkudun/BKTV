@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   ChevronLeft,
+  Languages,
   Loader2,
   Maximize,
   Minimize,
@@ -11,11 +12,22 @@ import {
   RotateCcw,
   RotateCw,
   Settings2,
+  Subtitles,
+  Upload,
   Volume2,
   VolumeX,
 } from "lucide-react";
 import type Hls from "hls.js";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type MpegtsPlayerType from "mpegts.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import {
+  type StreamCandidate,
+  buildSourceCandidates,
+  containerLabel,
+  isUnsupportedContainer,
+} from "@/lib/player/stream";
+import { languageLabel, subtitleFileToUrl } from "@/lib/player/subtitles";
 
 export interface VideoPlayerProps {
   src: string;
@@ -28,7 +40,7 @@ export interface VideoPlayerProps {
   startPosition?: number;
   /** Varsayılan kalite tercihi; HLS seviyelerinden en yakını seçilir */
   preferredQuality?: "auto" | "1080" | "720" | "480";
-  /** Kaynağı /api/proxy üzerinden geçir */
+  /** Önce proxy'li kaynakları dene */
   useProxy?: boolean;
   onBack?: () => void;
   /** Saniyede bir değil, ~5 saniyede bir çağrılır */
@@ -36,7 +48,10 @@ export interface VideoPlayerProps {
   onEnded?: () => void;
 }
 
-type PlayerError = { message: string; canRetryWithProxy: boolean };
+interface TrackOption {
+  id: number;
+  label: string;
+}
 
 const QUALITY_HEIGHTS: Record<string, number> = { "1080": 1080, "720": 720, "480": 480 };
 
@@ -56,8 +71,15 @@ export function VideoPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const mpegtsRef = useRef<ReturnType<typeof MpegtsPlayerType.createPlayer> | null>(null);
   const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastReport = useRef(0);
+  const subtitleInputRef = useRef<HTMLInputElement>(null);
+  /**
+   * Kaynak sökülürken video.load() "Empty src attribute" hatası fırlatır.
+   * Bu bayrak olmadan o hata "kaynak çalışmıyor" sanılıp sıradaki adaya geçilirdi.
+   */
+  const tearingDown = useRef(false);
 
   const [playing, setPlaying] = useState(false);
   const [buffering, setBuffering] = useState(true);
@@ -67,43 +89,86 @@ export function VideoPlayer({
   const [muted, setMuted] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [error, setError] = useState<PlayerError | null>(null);
-  const [levels, setLevels] = useState<{ index: number; height: number }[]>([]);
+  const [failed, setFailed] = useState(false);
+
+  const [levels, setLevels] = useState<TrackOption[]>([]);
   const [currentLevel, setCurrentLevel] = useState(-1);
-  /** hls.autoLevelEnabled render sırasında okunamaz (ref) — state olarak yansıtılır. */
   const [autoLevel, setAutoLevel] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [proxied, setProxied] = useState(useProxy);
+  const [audioTracks, setAudioTracks] = useState<TrackOption[]>([]);
+  const [activeAudio, setActiveAudio] = useState(-1);
+  const [embeddedSubs, setEmbeddedSubs] = useState<TrackOption[]>([]);
+  const [activeSub, setActiveSub] = useState(-1);
+  const [externalSubs, setExternalSubs] = useState<{ label: string; url: string }[]>([]);
+  const [activeExternalSub, setActiveExternalSub] = useState(-1);
 
-  const effectiveSrc = proxied ? `/api/proxy?url=${encodeURIComponent(src)}` : src;
+  const [menu, setMenu] = useState<"quality" | "audio" | "subs" | null>(null);
 
-  // ---- Kaynağı bağla (HLS ya da native) --------------------------------
+  // ---- Kaynak adayları: HLS varyantı → doğrudan → proxy ------------------
+  const candidates = useMemo(() => buildSourceCandidates(src, useProxy), [src, useProxy]);
+  const [candidateIndex, setCandidateIndex] = useState(0);
+
+  // src değişince aday zincirini render sırasında başa sar.
+  const [trackedSrc, setTrackedSrc] = useState(src);
+  if (trackedSrc !== src) {
+    setTrackedSrc(src);
+    setCandidateIndex(0);
+    setFailed(false);
+  }
+
+  const candidate: StreamCandidate | undefined = candidates[candidateIndex];
+
+  /** Bu adayda hata alındı: sıradakine geç, bittiyse hata ekranı göster. */
+  const failCandidate = useCallback(() => {
+    setCandidateIndex((index) => {
+      if (index + 1 < candidates.length) return index + 1;
+      setFailed(true);
+      setBuffering(false);
+      return index;
+    });
+  }, [candidates.length]);
+
+  // ---- Motoru bağla ------------------------------------------------------
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !src) return;
+    if (!video || !candidate || failed) return;
 
     let disposed = false;
-    setError(null);
+    tearingDown.current = false;
     setBuffering(true);
     setLevels([]);
+    setAudioTracks([]);
+    setEmbeddedSubs([]);
+    setActiveSub(-1);
 
-    const isHls = /\.m3u8(\?|$)/i.test(effectiveSrc) || /\/api\/proxy\?/.test(effectiveSrc);
-    const nativeHls = video.canPlayType("application/vnd.apple.mpegurl") !== "";
+    const cleanup = () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      if (mpegtsRef.current) {
+        try {
+          mpegtsRef.current.destroy();
+        } catch {
+          /* zaten kapanmış */
+        }
+        mpegtsRef.current = null;
+      }
+    };
 
-    const attachNative = () => {
-      video.src = effectiveSrc;
+    const startNative = () => {
+      video.src = candidate.url;
       if (startPosition > 0 && !isLive) video.currentTime = startPosition;
       if (autoPlay) void video.play().catch(() => setPlaying(false));
     };
 
-    if (isHls && !nativeHls) {
+    const nativeHls = video.canPlayType("application/vnd.apple.mpegurl") !== "";
+
+    if (candidate.kind === "hls" && !nativeHls) {
       void (async () => {
         const HlsModule = (await import("hls.js")).default;
         if (disposed) return;
-
         if (!HlsModule.isSupported()) {
-          setError({ message: "Tarayıcın HLS yayınlarını desteklemiyor.", canRetryWithProxy: false });
-          setBuffering(false);
+          startNative();
           return;
         }
 
@@ -120,9 +185,8 @@ export function VideoPlayer({
         hls.on(HlsModule.Events.MANIFEST_PARSED, (_event, data) => {
           setLevels(
             data.levels
-              .map((level, index) => ({ index, height: level.height ?? 0 }))
-              .filter((level) => level.height > 0)
-              .sort((a, b) => b.height - a.height),
+              .map((level, index) => ({ id: index, label: `${level.height ?? 0}p` }))
+              .filter((level) => level.label !== "0p"),
           );
 
           if (preferredQuality !== "auto") {
@@ -146,49 +210,87 @@ export function VideoPlayer({
           if (autoPlay) void video.play().catch(() => setPlaying(false));
         });
 
+        // Ses ve altyazı parçaları manifest içinde gelir.
+        hls.on(HlsModule.Events.AUDIO_TRACKS_UPDATED, (_event, data) => {
+          setAudioTracks(
+            data.audioTracks.map((track, index) => ({
+              id: index,
+              label: languageLabel(track.lang, track.name || `Ses ${index + 1}`),
+            })),
+          );
+          setActiveAudio(hls.audioTrack);
+        });
+
+        hls.on(HlsModule.Events.SUBTITLE_TRACKS_UPDATED, (_event, data) => {
+          setEmbeddedSubs(
+            data.subtitleTracks.map((track, index) => ({
+              id: index,
+              label: languageLabel(track.lang, track.name || `Altyazı ${index + 1}`),
+            })),
+          );
+        });
+
         hls.on(HlsModule.Events.LEVEL_SWITCHED, (_event, data) => setCurrentLevel(data.level));
 
         hls.on(HlsModule.Events.ERROR, (_event, data) => {
           if (!data.fatal) return;
-          switch (data.type) {
-            case HlsModule.ErrorTypes.NETWORK_ERROR:
-              // Manifest hiç yüklenemediyse büyük ihtimalle CORS → proxy önerilir.
-              setError({
-                message: proxied
-                  ? "Yayına ulaşılamıyor. Kaynak kapalı olabilir veya adres geçersiz."
-                  : "Yayın yüklenemedi. Kaynak tarayıcı isteklerini engelliyor olabilir.",
-                canRetryWithProxy: !proxied,
-              });
-              setBuffering(false);
-              break;
-            case HlsModule.ErrorTypes.MEDIA_ERROR:
-              hls.recoverMediaError();
-              break;
-            default:
-              setError({ message: "Yayın oynatılamadı.", canRetryWithProxy: !proxied });
-              setBuffering(false);
+          if (data.type === HlsModule.ErrorTypes.MEDIA_ERROR) {
+            hls.recoverMediaError();
+            return;
           }
+          cleanup();
+          failCandidate();
         });
 
-        hls.loadSource(effectiveSrc);
+        hls.loadSource(candidate.url);
         hls.attachMedia(video);
       })();
+    } else if (candidate.kind === "mpegts") {
+      void (async () => {
+        const mpegts = (await import("mpegts.js")).default;
+        if (disposed) return;
+        if (!mpegts.isSupported()) {
+          failCandidate();
+          return;
+        }
+
+        const player = mpegts.createPlayer(
+          { type: "mpegts", isLive: true, url: candidate.url },
+          {
+            // enableWorker kapalı: worker kodu Blob olarak üretiliyor ve bundler'ın
+            // dönüştürdüğü modül referansları worker içinde çözülemiyor
+            // ("… is not a constructor"). Ana thread'de sorunsuz çalışıyor.
+            enableWorker: false,
+            liveBufferLatencyChasing: true,
+            lazyLoad: false,
+            fixAudioTimestampGap: true,
+          },
+        );
+        mpegtsRef.current = player;
+
+        player.on(mpegts.Events.ERROR, () => {
+          cleanup();
+          failCandidate();
+        });
+
+        player.attachMediaElement(video);
+        player.load();
+        if (autoPlay) void player.play()?.catch?.(() => setPlaying(false));
+      })();
     } else {
-      attachNative();
+      startNative();
     }
 
     return () => {
       disposed = true;
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
+      tearingDown.current = true;
+      cleanup();
       video.removeAttribute("src");
       video.load();
     };
     // startPosition kasıtlı olarak dependency değil: her seek'te kaynağı yeniden bağlamamalı.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveSrc, src, isLive, autoPlay, preferredQuality, proxied]);
+  }, [candidate?.url, candidate?.kind, failed, isLive, autoPlay, preferredQuality, failCandidate]);
 
   // ---- Video olayları ---------------------------------------------------
   useEffect(() => {
@@ -198,10 +300,7 @@ export function VideoPlayer({
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onWaiting = () => setBuffering(true);
-    const onPlaying = () => {
-      setBuffering(false);
-      setError(null);
-    };
+    const onPlaying = () => setBuffering(false);
     const onLoaded = () => {
       setDuration(Number.isFinite(video.duration) ? video.duration : 0);
       setBuffering(false);
@@ -216,13 +315,10 @@ export function VideoPlayer({
       }
     };
     const onVideoError = () => {
-      setBuffering(false);
-      setError({
-        message: proxied
-          ? "Video oynatılamadı. Kaynak yanıt vermiyor olabilir."
-          : "Video oynatılamadı. Kaynak engellemiş olabilir.",
-        canRetryWithProxy: !proxied,
-      });
+      // Sökme sırasındaki "Empty src attribute" hatasını gerçek yayın hatası sanma.
+      if (tearingDown.current) return;
+      if (video.networkState === video.NETWORK_EMPTY) return;
+      failCandidate();
     };
     const onVolume = () => {
       setVolume(video.volume);
@@ -253,7 +349,7 @@ export function VideoPlayer({
       video.removeEventListener("volumechange", onVolume);
       video.removeEventListener("ended", onEndedEvent);
     };
-  }, [isLive, onProgress, onEnded, proxied]);
+  }, [isLive, onProgress, onEnded, failCandidate]);
 
   // Sayfadan ayrılırken son konumu bildir.
   useEffect(() => {
@@ -264,6 +360,56 @@ export function VideoPlayer({
     };
   }, [isLive, onProgress]);
 
+  // ---- Altyazı seçimi ---------------------------------------------------
+  const selectEmbeddedSub = useCallback((id: number) => {
+    setActiveSub(id);
+    setActiveExternalSub(-1);
+    if (hlsRef.current) {
+      hlsRef.current.subtitleDisplay = id >= 0;
+      hlsRef.current.subtitleTrack = id;
+    }
+    const video = videoRef.current;
+    if (video) {
+      for (const track of Array.from(video.textTracks)) track.mode = "disabled";
+    }
+  }, []);
+
+  const selectExternalSub = useCallback((index: number) => {
+    setActiveExternalSub(index);
+    setActiveSub(-1);
+    if (hlsRef.current) {
+      hlsRef.current.subtitleDisplay = false;
+      hlsRef.current.subtitleTrack = -1;
+    }
+    const video = videoRef.current;
+    if (!video) return;
+    // <track> elemanları externalSubs sırasıyla render ediliyor.
+    Array.from(video.textTracks).forEach((track, trackIndex) => {
+      track.mode = trackIndex === index ? "showing" : "disabled";
+    });
+  }, []);
+
+  const selectAudio = useCallback((id: number) => {
+    setActiveAudio(id);
+    if (hlsRef.current) hlsRef.current.audioTrack = id;
+  }, []);
+
+  const addSubtitleFile = useCallback(
+    async (file: File) => {
+      try {
+        const url = await subtitleFileToUrl(file);
+        const label = file.name.replace(/\.(srt|vtt)$/i, "");
+        setExternalSubs((current) => [...current, { label, url }]);
+        // Yeni eklenen parça DOM'a girdikten sonra seçilebilir.
+        setTimeout(() => selectExternalSub(externalSubs.length), 50);
+      } catch {
+        /* okunamayan dosya sessizce yok sayılır */
+      }
+    },
+    [externalSubs.length, selectExternalSub],
+  );
+
+  // ---- Kontroller -------------------------------------------------------
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -300,14 +446,12 @@ export function VideoPlayer({
     hideControlsTimer.current = setTimeout(() => setControlsVisible(false), 3200);
   }, []);
 
-  // Açılışta kontroller görünür (initial state), 3.2sn sonra gizlenir.
   useEffect(() => {
     const timer = setTimeout(() => setControlsVisible(false), 3200);
     hideControlsTimer.current = timer;
     return () => clearTimeout(timer);
   }, []);
 
-  // ---- Klavye / kumanda kısayolları ------------------------------------
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -356,6 +500,7 @@ export function VideoPlayer({
   }, [togglePlay, seekBy, toggleFullscreen, showControls]);
 
   const progressPercent = duration > 0 ? (position / duration) * 100 : 0;
+  const hasSubs = embeddedSubs.length > 0 || externalSubs.length > 0;
 
   return (
     <div
@@ -369,62 +514,29 @@ export function VideoPlayer({
       {/*
         crossOrigin bilinçli olarak set edilmiyor: düz MP4/TS kaynaklarının çoğu CORS
         başlığı göndermez ve "anonymous" bu yayınların hiç açılmamasına yol açar.
-        HLS zaten hls.js üzerinden XHR ile çekildiği için ayrıca CORS gerektirir.
       */}
-      <video ref={videoRef} onClick={togglePlay} playsInline className="h-full w-full bg-black" />
+      <video ref={videoRef} onClick={togglePlay} playsInline className="h-full w-full bg-black">
+        {externalSubs.map((track, index) => (
+          <track
+            key={track.url}
+            kind="subtitles"
+            src={track.url}
+            label={track.label}
+            default={index === activeExternalSub}
+          />
+        ))}
+      </video>
 
-      {buffering && !error && (
+      {buffering && !failed && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <Loader2 className="h-12 w-12 animate-spin text-white/80" />
         </div>
       )}
 
-      {error && (
-        <div className="absolute inset-0 z-30 grid place-items-center bg-black/85 p-6">
-          <div className="max-w-md text-center">
-            <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-accent/15 text-accent">
-              <AlertTriangle className="h-7 w-7" />
-            </span>
-            <h3 className="mt-4 text-[19px] font-bold">Yayın açılamadı</h3>
-            <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">{error.message}</p>
-            <div className="mt-5 flex flex-wrap justify-center gap-3">
-              {error.canRetryWithProxy && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProxied(true);
-                    setError(null);
-                  }}
-                  className="rounded-xl bg-accent px-4 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-accent-600"
-                >
-                  Proxy ile tekrar dene
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  const video = videoRef.current;
-                  video?.load();
-                  void video?.play().catch(() => {});
-                }}
-                className="rounded-xl border border-white/12 bg-white/5 px-4 py-2.5 text-[14px] font-semibold transition-colors hover:bg-white/10"
-              >
-                Yeniden dene
-              </button>
-              {onBack && (
-                <button
-                  type="button"
-                  onClick={onBack}
-                  className="rounded-xl border border-white/12 bg-white/5 px-4 py-2.5 text-[14px] font-semibold transition-colors hover:bg-white/10"
-                >
-                  Geri dön
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {failed && <FailureScreen src={src} onBack={onBack} onRetry={() => {
+        setFailed(false);
+        setCandidateIndex(0);
+      }} />}
 
       {/* Üst bar */}
       <div
@@ -508,7 +620,11 @@ export function VideoPlayer({
               }}
               label={muted ? "Sesi aç" : "Sessize al"}
             >
-              {muted || volume === 0 ? <VolumeX className="h-[18px] w-[18px]" /> : <Volume2 className="h-[18px] w-[18px]" />}
+              {muted || volume === 0 ? (
+                <VolumeX className="h-[18px] w-[18px]" />
+              ) : (
+                <Volume2 className="h-[18px] w-[18px]" />
+              )}
             </ControlButton>
             <input
               type="range"
@@ -528,43 +644,198 @@ export function VideoPlayer({
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            {/* Ses dili */}
+            {audioTracks.length > 1 && (
+              <MenuButton
+                open={menu === "audio"}
+                onToggle={() => setMenu(menu === "audio" ? null : "audio")}
+                label="Ses dili"
+                icon={<Languages className="h-[18px] w-[18px]" />}
+              >
+                {audioTracks.map((track) => (
+                  <MenuOption
+                    key={track.id}
+                    label={track.label}
+                    active={activeAudio === track.id}
+                    onClick={() => {
+                      selectAudio(track.id);
+                      setMenu(null);
+                    }}
+                  />
+                ))}
+              </MenuButton>
+            )}
+
+            {/* Altyazı */}
+            <MenuButton
+              open={menu === "subs"}
+              onToggle={() => setMenu(menu === "subs" ? null : "subs")}
+              label="Altyazı"
+              icon={
+                <Subtitles
+                  className={`h-[18px] w-[18px] ${
+                    activeSub >= 0 || activeExternalSub >= 0 ? "text-accent" : ""
+                  }`}
+                />
+              }
+            >
+              <MenuOption
+                label="Kapalı"
+                active={activeSub === -1 && activeExternalSub === -1}
+                onClick={() => {
+                  selectEmbeddedSub(-1);
+                  setMenu(null);
+                }}
+              />
+              {embeddedSubs.map((track) => (
+                <MenuOption
+                  key={`embedded-${track.id}`}
+                  label={track.label}
+                  active={activeSub === track.id}
+                  onClick={() => {
+                    selectEmbeddedSub(track.id);
+                    setMenu(null);
+                  }}
+                />
+              ))}
+              {externalSubs.map((track, index) => (
+                <MenuOption
+                  key={track.url}
+                  label={track.label}
+                  active={activeExternalSub === index}
+                  onClick={() => {
+                    selectExternalSub(index);
+                    setMenu(null);
+                  }}
+                />
+              ))}
+              {!hasSubs && (
+                <p className="px-4 py-2.5 text-[12px] leading-relaxed text-fg-dim">
+                  Bu yayında gömülü altyazı yok.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => subtitleInputRef.current?.click()}
+                className="flex w-full items-center gap-2 border-t border-white/8 px-4 py-2.5 text-left text-[13px] font-medium text-fg-muted transition-colors hover:bg-white/8 hover:text-fg"
+              >
+                <Upload className="h-3.5 w-3.5" /> .srt / .vtt yükle
+              </button>
+            </MenuButton>
+
+            <input
+              ref={subtitleInputRef}
+              type="file"
+              accept=".srt,.vtt,text/vtt"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void addSubtitleFile(file);
+                event.target.value = "";
+              }}
+            />
+
+            {/* Kalite */}
             {levels.length > 1 && (
-              <div className="relative">
-                <ControlButton onClick={() => setSettingsOpen((open) => !open)} label="Kalite">
-                  <Settings2 className="h-[18px] w-[18px]" />
-                </ControlButton>
-                {settingsOpen && (
-                  <div className="absolute bottom-12 right-0 w-36 overflow-hidden rounded-xl border border-white/10 bg-ink-850/95 backdrop-blur-xl">
-                    <QualityOption
-                      label="Otomatik"
-                      active={autoLevel}
-                      onClick={() => {
-                        if (hlsRef.current) hlsRef.current.currentLevel = -1;
-                        setAutoLevel(true);
-                        setSettingsOpen(false);
-                      }}
-                    />
-                    {levels.map((level) => (
-                      <QualityOption
-                        key={level.index}
-                        label={`${level.height}p`}
-                        active={!autoLevel && currentLevel === level.index}
-                        onClick={() => {
-                          if (hlsRef.current) hlsRef.current.currentLevel = level.index;
-                          setAutoLevel(false);
-                          setSettingsOpen(false);
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+              <MenuButton
+                open={menu === "quality"}
+                onToggle={() => setMenu(menu === "quality" ? null : "quality")}
+                label="Kalite"
+                icon={<Settings2 className="h-[18px] w-[18px]" />}
+              >
+                <MenuOption
+                  label="Otomatik"
+                  active={autoLevel}
+                  onClick={() => {
+                    if (hlsRef.current) hlsRef.current.currentLevel = -1;
+                    setAutoLevel(true);
+                    setMenu(null);
+                  }}
+                />
+                {levels.map((level) => (
+                  <MenuOption
+                    key={level.id}
+                    label={level.label}
+                    active={!autoLevel && currentLevel === level.id}
+                    onClick={() => {
+                      if (hlsRef.current) hlsRef.current.currentLevel = level.id;
+                      setAutoLevel(false);
+                      setMenu(null);
+                    }}
+                  />
+                ))}
+              </MenuButton>
             )}
 
             <ControlButton onClick={toggleFullscreen} label={fullscreen ? "Tam ekrandan çık" : "Tam ekran"}>
               {fullscreen ? <Minimize className="h-[18px] w-[18px]" /> : <Maximize className="h-[18px] w-[18px]" />}
             </ControlButton>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Tüm kaynak adayları tükendiğinde gösterilen tanı ekranı. */
+function FailureScreen({
+  src,
+  onBack,
+  onRetry,
+}: {
+  src: string;
+  onBack?: () => void;
+  onRetry: () => void;
+}) {
+  const unsupported = isUnsupportedContainer(src);
+
+  return (
+    <div className="absolute inset-0 z-30 grid place-items-center bg-black/85 p-6">
+      <div className="max-w-lg text-center">
+        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-accent/15 text-accent">
+          <AlertTriangle className="h-7 w-7" />
+        </span>
+        <h3 className="mt-4 text-[19px] font-bold">Yayın açılamadı</h3>
+
+        <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">
+          {unsupported ? (
+            <>
+              Bu içerik <strong className="text-fg">{containerLabel(src)}</strong> formatında. Tarayıcılar bu
+              konteyneri hiçbir eklentiyle açamaz — dosyayı VLC gibi bir oynatıcıda izlemen gerekir.
+            </>
+          ) : (
+            <>
+              Doğrudan bağlantı, HLS varyantı ve proxy denendi; hiçbiri yanıt vermedi. Kaynak kapalı olabilir,
+              aynı hesapla başka bir cihazda yayın açık olabilir ya da sağlayıcı bu bağlantıyı engelliyor olabilir.
+            </>
+          )}
+        </p>
+
+        <div className="mt-5 flex flex-wrap justify-center gap-3">
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-xl bg-accent px-4 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-accent-600"
+          >
+            Baştan dene
+          </button>
+          <a
+            href={src}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-xl border border-white/12 bg-white/5 px-4 py-2.5 text-[14px] font-semibold transition-colors hover:bg-white/10"
+          >
+            Bağlantıyı aç
+          </a>
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="rounded-xl border border-white/12 bg-white/5 px-4 py-2.5 text-[14px] font-semibold transition-colors hover:bg-white/10"
+            >
+              Geri dön
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -593,7 +864,37 @@ function ControlButton({
   );
 }
 
-function QualityOption({
+function MenuButton({
+  open,
+  onToggle,
+  label,
+  icon,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  label: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative">
+      <ControlButton onClick={onToggle} label={label}>
+        {icon}
+      </ControlButton>
+      {open && (
+        <div className="absolute bottom-12 right-0 max-h-[280px] w-48 overflow-y-auto rounded-xl border border-white/10 bg-ink-850/95 backdrop-blur-xl">
+          <p className="border-b border-white/8 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-fg-dim">
+            {label}
+          </p>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuOption({
   label,
   active,
   onClick,

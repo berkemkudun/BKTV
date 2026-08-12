@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Maximize2, Radio, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 
 import { FavoriteButton } from "@/components/content/FavoriteButton";
 import { VideoPlayer } from "@/components/player/VideoPlayer";
@@ -10,6 +11,7 @@ import { SmartImage } from "@/components/ui/SmartImage";
 import { EmptyState, LoadingSkeleton } from "@/components/ui/States";
 import { useChannels } from "@/lib/hooks/useLibrarySelectors";
 import { usePagedList } from "@/lib/hooks/usePagedList";
+import { groupChannelsByCategory } from "@/lib/library/channelCategories";
 import { countryLabel } from "@/lib/m3u/classify";
 import { useLibraryStore } from "@/lib/store/libraryStore";
 import { useUiStore } from "@/lib/store/uiStore";
@@ -17,21 +19,48 @@ import { useUserStore } from "@/lib/store/userStore";
 import type { ContentItem } from "@/lib/types";
 
 export default function LiveTvPage() {
+  return (
+    <Suspense fallback={<div className="px-5 pt-6 lg:px-8" />}>
+      <LiveTvBrowser />
+    </Suspense>
+  );
+}
+
+function LiveTvBrowser() {
   const hydrated = useLibraryStore((state) => state.hydrated);
   const openPlaylistDialog = useUiStore((state) => state.openPlaylistDialog);
   const channels = useChannels();
   const playerSettings = useUserStore((state) => state.player);
 
-  const [group, setGroup] = useState("");
+  // Ana sayfadaki "Spor / Ulusal / Haber…" kutucukları /live?category=sports'a gider.
+  const searchParams = useSearchParams();
+  const categoryParam = searchParams.get("category") ?? "";
+
+  const [category, setCategory] = useState(categoryParam);
+  const [subGroup, setSubGroup] = useState("");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Gruplar: ülke bilgisi varsa ülkeye, yoksa ham group-title'a göre
-  const groups = useMemo(() => {
+  const [trackedParam, setTrackedParam] = useState(categoryParam);
+  if (trackedParam !== categoryParam) {
+    setTrackedParam(categoryParam);
+    setCategory(categoryParam);
+    setSubGroup("");
+  }
+
+  const categories = useMemo(() => groupChannelsByCategory(channels), [channels]);
+
+  const inCategory = useMemo(() => {
+    if (!category) return channels;
+    return categories.find((entry) => entry.category.id === category)?.channels ?? [];
+  }, [categories, category, channels]);
+
+  // Kategori içindeki alt gruplar (sağlayıcının ham group-title'ları / ülkeler)
+  const subGroups = useMemo(() => {
     const counts = new Map<string, { label: string; count: number }>();
-    for (const channel of channels) {
-      const key = channel.country ?? channel.group ?? "Diğer";
-      const label = channel.country ? countryLabel(channel.country) : channel.group || "Diğer";
+    for (const channel of inCategory) {
+      const key = channel.group || channel.country || "Diğer";
+      const label = channel.group || (channel.country ? countryLabel(channel.country) : "Diğer");
       const entry = counts.get(key) ?? { label, count: 0 };
       entry.count += 1;
       counts.set(key, entry);
@@ -39,22 +68,20 @@ export default function LiveTvPage() {
     return [...counts.entries()]
       .map(([value, entry]) => ({ value, ...entry }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 40);
-  }, [channels]);
+      .slice(0, 30);
+  }, [inCategory]);
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("tr-TR");
-    return channels.filter((channel) => {
-      const key = channel.country ?? channel.group ?? "Diğer";
-      if (group && key !== group) return false;
+    return inCategory.filter((channel) => {
+      if (subGroup && (channel.group || channel.country || "Diğer") !== subGroup) return false;
       if (normalizedQuery && !channel.title.toLocaleLowerCase("tr-TR").includes(normalizedQuery)) return false;
       return true;
     });
-  }, [channels, group, query]);
+  }, [inCategory, subGroup, query]);
 
   const { visible, sentinelRef, hasMore } = usePagedList(filtered, 80);
 
-  // Seçili kanal id üzerinden türetiliyor: filtre değişince listedeki ilk kanala düşer.
   const selected = useMemo(
     () => filtered.find((channel) => channel.id === selectedId) ?? filtered[0] ?? null,
     [filtered, selectedId],
@@ -81,100 +108,168 @@ export default function LiveTvPage() {
   }
 
   return (
-    <div className="grid gap-6 px-5 pt-5 lg:px-8 xl:grid-cols-[220px_1fr_minmax(360px,420px)]">
-      {/* Gruplar */}
-      <aside className="xl:sticky xl:top-[88px] xl:self-start">
-        <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wider text-fg-dim">Gruplar</h2>
-        <div className="no-scrollbar flex gap-2 overflow-x-auto pb-2 xl:max-h-[70vh] xl:flex-col xl:overflow-y-auto">
-          <GroupButton label="Tüm Kanallar" count={channels.length} active={!group} onClick={() => setGroup("")} />
-          {groups.map((item) => (
-            <GroupButton
-              key={item.value}
-              label={item.label}
-              count={item.count}
-              active={group === item.value}
-              onClick={() => setGroup(item.value)}
-            />
-          ))}
-        </div>
-      </aside>
-
-      {/* Kanal listesi */}
-      <div className="min-w-0">
-        <div className="relative mb-4">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-dim" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Kanal ara…"
-            className="h-11 w-full rounded-xl border border-white/8 bg-white/[0.04] pl-10 pr-4 text-[14px] outline-none transition-colors placeholder:text-fg-dim focus:border-accent/40"
+    <div className="px-5 pt-5 lg:px-8">
+      {/* Kategori sekmeleri: Spor / Ulusal / Haber / Çocuk … */}
+      <div className="no-scrollbar -mx-5 mb-5 flex gap-2 overflow-x-auto px-5 lg:-mx-8 lg:px-8">
+        <CategoryChip
+          label="Tümü"
+          count={channels.length}
+          color="#9A9AAD"
+          active={!category}
+          onClick={() => {
+            setCategory("");
+            setSubGroup("");
+          }}
+        />
+        {categories.map((entry) => (
+          <CategoryChip
+            key={entry.category.id}
+            label={entry.category.label}
+            count={entry.channels.length}
+            color={entry.category.color}
+            active={category === entry.category.id}
+            onClick={() => {
+              setCategory(entry.category.id);
+              setSubGroup("");
+            }}
           />
-        </div>
-
-        {filtered.length === 0 ? (
-          <p className="py-10 text-center text-[14px] text-fg-muted">Bu filtreye uyan kanal yok.</p>
-        ) : (
-          <>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
-              {visible.map((channel) => (
-                <ChannelCard
-                  key={channel.id}
-                  channel={channel}
-                  active={selected?.id === channel.id}
-                  onSelect={() => setSelectedId(channel.id)}
-                />
-              ))}
-            </div>
-            {hasMore && <div ref={sentinelRef} className="h-20" />}
-          </>
-        )}
+        ))}
       </div>
 
-      {/* Oynatıcı */}
-      <div className="xl:sticky xl:top-[88px] xl:self-start">
-        {selected ? (
-          <div className="overflow-hidden rounded-2xl border border-white/8 bg-ink-900">
-            <div className="aspect-video w-full bg-black">
-              <VideoPlayer
-                key={selected.id}
-                src={selected.streamUrl}
-                title={selected.title}
-                subtitle={selected.group}
-                isLive
-                autoPlay={playerSettings.autoplay}
-                useProxy={playerSettings.useStreamProxy}
-                preferredQuality={playerSettings.defaultQuality}
+      <div className="grid gap-6 xl:grid-cols-[220px_1fr_minmax(360px,420px)]">
+        {/* Alt gruplar */}
+        <aside className="xl:sticky xl:top-[88px] xl:self-start">
+          <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wider text-fg-dim">
+            {category ? "Alt gruplar" : "Gruplar"}
+          </h2>
+          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-2 xl:max-h-[68vh] xl:flex-col xl:overflow-y-auto">
+            <GroupButton
+              label="Hepsi"
+              count={inCategory.length}
+              active={!subGroup}
+              onClick={() => setSubGroup("")}
+            />
+            {subGroups.map((item) => (
+              <GroupButton
+                key={item.value}
+                label={item.label}
+                count={item.count}
+                active={subGroup === item.value}
+                onClick={() => setSubGroup(item.value)}
               />
-            </div>
-            <div className="flex items-start justify-between gap-3 p-4">
-              <div className="min-w-0">
-                <h3 className="truncate text-[16px] font-bold">{selected.title}</h3>
-                <p className="truncate text-[12.5px] text-fg-dim">{selected.group}</p>
+            ))}
+          </div>
+        </aside>
+
+        {/* Kanal listesi */}
+        <div className="min-w-0">
+          <div className="relative mb-4">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-dim" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Kanal ara…"
+              className="h-11 w-full rounded-xl border border-white/8 bg-white/[0.04] pl-10 pr-4 text-[14px] outline-none transition-colors placeholder:text-fg-dim focus:border-accent/40"
+            />
+          </div>
+
+          {filtered.length === 0 ? (
+            <p className="py-10 text-center text-[14px] text-fg-muted">Bu filtreye uyan kanal yok.</p>
+          ) : (
+            <>
+              <p className="mb-3 text-[12.5px] text-fg-dim">
+                {filtered.length.toLocaleString("tr-TR")} kanal
+              </p>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
+                {visible.map((channel) => (
+                  <ChannelCard
+                    key={channel.id}
+                    channel={channel}
+                    active={selected?.id === channel.id}
+                    onSelect={() => setSelectedId(channel.id)}
+                  />
+                ))}
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <FavoriteButton
-                  id={selected.id}
+              {hasMore && <div ref={sentinelRef} className="h-20" />}
+            </>
+          )}
+        </div>
+
+        {/* Oynatıcı */}
+        <div className="xl:sticky xl:top-[88px] xl:self-start">
+          {selected ? (
+            <div className="overflow-hidden rounded-2xl border border-white/8 bg-ink-900">
+              <div className="aspect-video w-full bg-black">
+                <VideoPlayer
+                  key={selected.id}
+                  src={selected.streamUrl}
                   title={selected.title}
-                  type={selected.type}
-                  logo={selected.logo}
+                  subtitle={selected.group}
+                  isLive
+                  autoPlay={playerSettings.autoplay}
+                  useProxy={playerSettings.useStreamProxy}
+                  preferredQuality={playerSettings.defaultQuality}
                 />
-                <Link
-                  href={`/watch/${selected.id}`}
-                  className="grid h-8 w-8 place-items-center rounded-full bg-white/8 transition-colors hover:bg-white/15"
-                  aria-label="Tam ekranda aç"
-                >
-                  <Maximize2 className="h-4 w-4" />
-                </Link>
+              </div>
+              <div className="flex items-start justify-between gap-3 p-4">
+                <div className="min-w-0">
+                  <h3 className="truncate text-[16px] font-bold">{selected.title}</h3>
+                  <p className="truncate text-[12.5px] text-fg-dim">{selected.group}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <FavoriteButton
+                    id={selected.id}
+                    title={selected.title}
+                    type={selected.type}
+                    logo={selected.logo}
+                  />
+                  <Link
+                    href={`/watch/${selected.id}`}
+                    className="grid h-8 w-8 place-items-center rounded-full bg-white/8 transition-colors hover:bg-white/15"
+                    aria-label="Tam ekranda aç"
+                  >
+                    <Maximize2 className="h-4 w-4" />
+                  </Link>
+                </div>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="grid aspect-video place-items-center rounded-2xl border border-white/8 bg-ink-900 text-fg-dim">
-            <Radio className="h-8 w-8" />
-          </div>
-        )}
+          ) : (
+            <div className="grid aspect-video place-items-center rounded-2xl border border-white/8 bg-ink-900 text-fg-dim">
+              <Radio className="h-8 w-8" />
+            </div>
+          )}
+        </div>
       </div>
     </div>
+  );
+}
+
+function CategoryChip({
+  label,
+  count,
+  color,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  color: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex shrink-0 items-center gap-2 rounded-xl border px-4 py-2.5 text-[13.5px] font-semibold transition-all ${
+        active ? "border-transparent text-white" : "border-white/8 bg-white/[0.03] text-fg-muted hover:text-fg"
+      }`}
+      style={active ? { background: `linear-gradient(120deg, ${color}, ${color}99)` } : undefined}
+    >
+      {!active && <span className="h-2 w-2 rounded-full" style={{ background: color }} />}
+      {label}
+      <span className={active ? "text-white/70" : "text-fg-dim"}>{count.toLocaleString("tr-TR")}</span>
+    </button>
   );
 }
 

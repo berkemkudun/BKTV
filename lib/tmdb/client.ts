@@ -71,6 +71,14 @@ export async function matchTitle(
   if (inflight) return inflight;
 
   const promise = (async () => {
+    // Sunucuda TMDB anahtarı yoksa hiç istek atma — kütüphane 10.000 karttan
+    // oluşabiliyor, hepsi için boşa giden bir istek anlamsız olurdu.
+    if (!(await tmdbStatus())) {
+      MEMORY_CACHE.set(key, null);
+      INFLIGHT.delete(key);
+      return null;
+    }
+
     try {
       const cached = await idbGet<CacheRecord>(STORES.tmdb, key).catch(() => undefined);
       if (cached && Date.now() - cached.savedAt < CACHE_TTL_MS) {

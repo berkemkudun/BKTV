@@ -1,5 +1,13 @@
 import type { ContentItem, Playlist, SeriesItem, UserPreferences } from "@/lib/types";
-import { STORES, idbBulkPut, idbClear, idbDelete, idbDeleteByIndex, idbGetAll, idbPut } from "@/lib/storage/idb";
+import {
+  STORES,
+  idbClear,
+  idbDelete,
+  idbDeleteByIndex,
+  idbGetAll,
+  idbPut,
+  idbReplaceByIndex,
+} from "@/lib/storage/idb";
 
 /**
  * Storage abstraction.
@@ -61,10 +69,9 @@ class IndexedDbLibraryRepository implements LibraryRepository {
   }
 
   async replacePlaylistContent(playlistId: string, items: ContentItem[], series: SeriesItem[]) {
-    await idbDeleteByIndex(STORES.items, "playlistId", playlistId);
-    await idbDeleteByIndex(STORES.series, "playlistId", playlistId);
-    await idbBulkPut(STORES.items, items);
-    await idbBulkPut(STORES.series, series);
+    // Her store için tek transaction: sil + yaz (bkz. idbReplaceByIndex).
+    await idbReplaceByIndex(STORES.items, "playlistId", playlistId, items);
+    await idbReplaceByIndex(STORES.series, "playlistId", playlistId, series);
   }
 
   async clearAll() {

@@ -17,6 +17,7 @@
     "@eslint/eslintrc": "^3.3.6",
     "hls.js": "^1.6.18",
     "lucide-react": "^1.31.0",
+    "mpegts.js": "^1.8.1",
     "next": "^16.3.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

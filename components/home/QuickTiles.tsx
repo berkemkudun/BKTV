@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { ChevronRight, Film, Heart, Radio, Tv } from "lucide-react";
 
+import { useChannels } from "@/lib/hooks/useLibrarySelectors";
 import { useLibraryStore } from "@/lib/store/libraryStore";
 import { useUserStore } from "@/lib/store/userStore";
 
 export function QuickTiles() {
   const counts = useLibraryStore((state) => state.counts);
   const seriesCount = useLibraryStore((state) => state.series.length);
+  const channelCount = useChannels().length;
   const favoriteCount = useUserStore((state) => Object.keys(state.favorites).length);
 
   const tiles = [
@@ -31,9 +33,8 @@ export function QuickTiles() {
     {
       href: "/live",
       label: "CANLI TV",
-      description: counts.live + counts.sports + counts.news
-        ? `${(counts.live + counts.sports + counts.news).toLocaleString("tr-TR")} kanal`
-        : "Henüz kanal yok",
+      // /live sayfasıyla aynı seçici kullanılıyor ki sayılar tutarlı olsun.
+      description: channelCount ? `${channelCount.toLocaleString("tr-TR")} kanal` : "Henüz kanal yok",
       icon: Radio,
       from: "rgba(37,99,235,0.32)",
       accent: "#7dd3fc",

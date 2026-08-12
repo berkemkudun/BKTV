@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 
 import { ContentCard } from "@/components/content/ContentCard";
 import { FilterBar } from "@/components/content/FilterBar";
@@ -11,13 +12,31 @@ import { useLibraryStore } from "@/lib/store/libraryStore";
 import { useUiStore } from "@/lib/store/uiStore";
 
 export default function MoviesPage() {
+  return (
+    <Suspense fallback={<div className="px-5 pt-6 lg:px-8" />}>
+      <MoviesBrowser />
+    </Suspense>
+  );
+}
+
+function MoviesBrowser() {
   const hydrated = useLibraryStore((state) => state.hydrated);
   const providers = useLibraryStore((state) => state.providers);
   const openPlaylistDialog = useUiStore((state) => state.openPlaylistDialog);
   const movies = useMovies();
 
+  // Ana sayfadaki kategori kutucukları /movies?category=Aksiyon adresine gider.
+  const searchParams = useSearchParams();
+  const categoryParam = searchParams.get("category") ?? "";
+
   const [provider, setProvider] = useState("");
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState(categoryParam);
+
+  const [trackedParam, setTrackedParam] = useState(categoryParam);
+  if (trackedParam !== categoryParam) {
+    setTrackedParam(categoryParam);
+    setCategory(categoryParam);
+  }
 
   const providerOptions = useMemo(
     () =>

@@ -18,6 +18,14 @@ import type {
 import { hash } from "@/lib/utils/id";
 
 /**
+ * Sınıflandırma sürümü.
+ *
+ * Provider/tip/dizi tespiti değiştiğinde artırın: kayıtlı playlistler "yenile"
+ * uyarısı gösterir, çünkü kütüphane parse anındaki kurallarla derlenmiştir.
+ */
+export const PARSER_VERSION = 2;
+
+/**
  * Ham M3U kayıtlarını uygulamanın kullandığı kütüphaneye dönüştürür.
  *
  * Adımlar:
@@ -33,6 +41,8 @@ export function buildLibraryFromEntries(entries: RawEntry[], playlistId: string)
 } {
   const itemsById = new Map<string, ContentItem>();
   const seriesBuckets = new Map<string, { title: string; providerSlug: string; group: string; logo?: string; year?: number; episodes: ContentItem[] }>();
+  /** S/E bilgisi olmayan dizi bölümleri için sıra sayacı (bkz. aşağıda) */
+  const sequentialEpisodes = new Map<string, number>();
 
   for (const entry of entries) {
     if (!entry.url) continue;
@@ -43,14 +53,30 @@ export function buildLibraryFromEntries(entries: RawEntry[], playlistId: string)
     const group = entry.group || entry.attributes["group-title"] || "";
     const provider = detectProvider(group, rawName);
     const type = detectContentType(group, rawName, entry.url, entry.duration, provider.slug);
-    const episodeInfo = parseSeriesInfo(rawName) ?? parseSeriesInfo(group);
+    let episodeInfo = parseSeriesInfo(rawName) ?? parseSeriesInfo(group);
     const { title, year } = cleanTitle(rawName);
+
+    // Adres /series/ diyor ama isimde S/E kalıbı yok (bazı paneller böyle):
+    // dizi başlığını grup adından alıp bölümleri liste sırasına göre numaralandır.
+    if (!episodeInfo && type === "series") {
+      const seriesTitle = group ? extractSeriesTitleFromGroup(group, provider.name) : title;
+      const key = `${provider.slug}:${normalizeForMatch(seriesTitle)}`;
+      const nextEpisode = (sequentialEpisodes.get(key) ?? 0) + 1;
+      sequentialEpisodes.set(key, nextEpisode);
+      episodeInfo = {
+        season: 1,
+        episode: nextEpisode,
+        label: `S01E${String(nextEpisode).padStart(2, "0")}`,
+      };
+    }
 
     const logo = entry.attributes["tvg-logo"] || undefined;
     const tvgId = entry.attributes["tvg-id"] || undefined;
 
     if (type === "series" && episodeInfo) {
-      const seriesTitle = stripEpisodeSuffix(title);
+      const seriesTitle = hasSeriesPattern(rawName)
+        ? stripEpisodeSuffix(title)
+        : extractSeriesTitleFromGroup(group, provider.name) || stripEpisodeSuffix(title);
       const seriesKey = `${provider.slug}:${normalizeForMatch(seriesTitle)}`;
       const seriesId = `sr_${hash(seriesKey)}`;
       const episodeId = `ep_${hash(`${seriesKey}:${episodeInfo.season}:${episodeInfo.episode}:${entry.url}`)}`;
@@ -266,6 +292,34 @@ function countByType(items: ContentItem[]): Record<ContentType, number> {
   };
   for (const item of items) counts[item.type] += 1;
   return counts;
+}
+
+function hasSeriesPattern(rawName: string): boolean {
+  return parseSeriesInfo(rawName) !== null;
+}
+
+/**
+ * Xtream panellerinde S/E taşımayan dizi bölümleri, dizi adını group-title'da tutar:
+ * "TR | DİZİLER | Kızılcık Şerbeti" → "Kızılcık Şerbeti"
+ */
+function extractSeriesTitleFromGroup(group: string, providerName: string): string {
+  const parts = group
+    .split(/[|/>]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const noise = new Set(
+    ["series", "dizi", "diziler", "tv shows", "shows", "vod", providerName].map((value) =>
+      normalizeForMatch(value),
+    ),
+  );
+
+  const meaningful = parts.filter((part) => {
+    const normalized = normalizeForMatch(part);
+    return normalized.length > 1 && !noise.has(normalized) && normalized.length < 60;
+  });
+
+  return meaningful[meaningful.length - 1] ?? "";
 }
 
 /** "Breaking Bad S02E04" içindeki başlıkta bölüm adı kaldıysa kırp. */

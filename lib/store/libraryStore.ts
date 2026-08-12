@@ -3,7 +3,7 @@
 import { create } from "zustand";
 
 import { DEMO_PLAYLIST_ID, buildDemoM3U } from "@/lib/demo/demoPlaylist";
-import { buildLibraryFromEntries, mergeLibraries } from "@/lib/library/build";
+import { PARSER_VERSION, buildLibraryFromEntries, mergeLibraries } from "@/lib/library/build";
 import { parseM3UChunked } from "@/lib/m3u/parser";
 import { libraryRepository } from "@/lib/storage/repository";
 import type { ContentItem, Library, LibraryProvider, Playlist, SeriesItem } from "@/lib/types";
@@ -119,14 +119,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
     let text: string;
     try {
-      const response = await fetch("/api/playlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const data = (await response.json()) as { text?: string; error?: string };
-      if (!response.ok || !data.text) throw new Error(data.error ?? "Playlist indirilemedi");
-      text = data.text;
+      text = await downloadPlaylist(url, (message) =>
+        set({ load: { stage: "downloading", message, parsed: 0 } }),
+      );
     } catch (error) {
       set({
         load: {
@@ -156,19 +151,19 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (!playlist?.url) throw new Error("Bu playlist bir URL'den gelmediği için yenilenemez");
 
     set({ load: { stage: "downloading", message: "Playlist yenileniyor…", parsed: 0 } });
-    const response = await fetch("/api/playlist", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: playlist.url }),
-    });
-    const data = (await response.json()) as { text?: string; error?: string };
-    if (!response.ok || !data.text) {
-      const message = data.error ?? "Playlist yenilenemedi";
+
+    let text: string;
+    try {
+      text = await downloadPlaylist(playlist.url, (message) =>
+        set({ load: { stage: "downloading", message, parsed: 0 } }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Playlist yenilenemedi";
       set({ load: { stage: "error", message: "", parsed: 0, error: message } });
       throw new Error(message);
     }
 
-    await ingest(data.text, playlist);
+    await ingest(text, playlist);
   },
 
   removePlaylist: async (playlistId) => {
@@ -200,6 +195,46 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 }));
 
+/**
+ * M3U metnini indirir.
+ *
+ * Önce sunucu proxy'si denenir (CORS'u aşar). Sağlayıcı sunucunun IP'sini
+ * engelliyorsa (paneller veri merkezi IP'lerini sıkça engeller — Vercel'de tipik
+ * 403) aynı adres tarayıcıdan, yani kullanıcının kendi IP'sinden denenir.
+ * O da CORS'a takılırsa kullanıcıya dosya yükleme yolu gösterilir.
+ */
+async function downloadPlaylist(url: string, onStatus: (message: string) => void): Promise<string> {
+  const response = await fetch("/api/playlist", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+
+  const data = (await response.json()) as { text?: string; error?: string; reason?: string };
+  if (response.ok && data.text) return data.text;
+
+  if (data.reason !== "blocked") {
+    throw new Error(data.error ?? "Playlist indirilemedi");
+  }
+
+  onStatus("Sunucu engellendi, tarayıcıdan deneniyor…");
+
+  try {
+    const direct = await fetch(url, { redirect: "follow" });
+    if (direct.ok) {
+      const text = await direct.text();
+      if (text.includes("#EXTINF")) return text;
+    }
+  } catch {
+    /* CORS ya da ağ hatası — aşağıdaki yönlendirici mesaja düş */
+  }
+
+  throw new Error(
+    "Sağlayıcı hem sunucunun hem tarayıcının isteğini reddetti. Listeyi bilgisayarına indirip " +
+      "“Dosya Yükle” sekmesinden ekleyebilirsin — bu yöntem her zaman çalışır.",
+  );
+}
+
 /** İndirilmiş M3U metnini parse edip kütüphaneye işler ve kalıcı olarak saklar. */
 async function ingest(text: string, playlistMeta: Omit<Playlist, "lastUpdated" | "itemCount">) {
   const set = useLibraryStore.setState;
@@ -229,6 +264,7 @@ async function ingest(text: string, playlistMeta: Omit<Playlist, "lastUpdated" |
     ...playlistMeta,
     lastUpdated: Date.now(),
     itemCount: built.items.length,
+    parserVersion: PARSER_VERSION,
   };
 
   let persisted = true;

@@ -2,23 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Clock,
-  Film,
-  Heart,
-  Home,
-  ListVideo,
-  Plus,
-  Radio,
-  Settings,
-  Sparkles,
-  Tv,
-  X,
-} from "lucide-react";
+import { Clock, Film, Heart, Home, Plus, Radio, Settings, Sparkles, Tv, X } from "lucide-react";
 
 import { useLibraryStore } from "@/lib/store/libraryStore";
 import { useUiStore } from "@/lib/store/uiStore";
-import { useTmdbConfigured } from "@/lib/hooks/useTmdb";
 
 const NAV = [
   { href: "/", label: "Ana Sayfa", icon: Home },
@@ -37,7 +24,6 @@ export function Sidebar() {
   const openPlaylistDialog = useUiStore((state) => state.openPlaylistDialog);
   const playlists = useLibraryStore((state) => state.playlists);
   const isDemo = useLibraryStore((state) => state.isDemo);
-  const tmdbConfigured = useTmdbConfigured();
 
   return (
     <>
@@ -138,6 +124,11 @@ export function Sidebar() {
         </div>
 
         <div className="mt-auto space-y-3 p-4">
+          {/*
+            TMDB anahtarı yoksa burada uyarı göstermiyoruz: uygulama anahtarsız da
+            tam çalışıyor ve sürekli hatırlatma sadece gürültü olurdu. Durum
+            Ayarlar sayfasında görünür.
+          */}
           {isDemo && (
             <div className="rounded-xl border border-accent/25 bg-gradient-to-br from-accent/12 to-violet/10 p-4">
               <div className="flex items-center gap-2 text-[13.5px] font-semibold">
@@ -156,17 +147,6 @@ export function Sidebar() {
             </div>
           )}
 
-          {tmdbConfigured === false && (
-            <Link
-              href="/settings"
-              className="flex items-start gap-2 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-[12px] leading-relaxed text-amber-200/80 transition-colors hover:bg-amber-400/10"
-            >
-              <ListVideo className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>
-                TMDB anahtarı tanımlı değil — posterler ve metadata devre dışı. Nasıl ekleneceğini gör →
-              </span>
-            </Link>
-          )}
         </div>
       </aside>
     </>

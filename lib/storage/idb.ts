@@ -108,16 +108,42 @@ export async function idbDeleteByIndex(store: StoreName, index: string, value: s
       reject(new Error(`Index bulunamadı: ${index}`));
       return;
     }
-    const request = objectStore.index(index).openKeyCursor(IDBKeyRange.only(value));
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (cursor) {
-        objectStore.delete(cursor.primaryKey);
-        cursor.continue();
-      }
+    // Cursor ile tek tek gezmek yerine anahtarları tek seferde al: 35.000 kayıtlık
+    // bir playlist'te aradaki fark saniyelerle ölçülüyor.
+    const keysRequest = objectStore.index(index).getAllKeys(IDBKeyRange.only(value));
+    keysRequest.onsuccess = () => {
+      for (const key of keysRequest.result) objectStore.delete(key);
     };
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+/**
+ * Bir playlist'in tüm kayıtlarını tek transaction'da değiştirir.
+ * Silme + yazmayı ayrı transaction'lara bölmek 35.000 kayıtta belirgin yavaşlık yaratıyordu.
+ */
+export async function idbReplaceByIndex<T>(
+  store: StoreName,
+  index: string,
+  value: string,
+  records: T[],
+): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite");
+    const objectStore = tx.objectStore(store);
+
+    const keysRequest = objectStore.index(index).getAllKeys(IDBKeyRange.only(value));
+    keysRequest.onsuccess = () => {
+      for (const key of keysRequest.result) objectStore.delete(key);
+      for (const record of records) objectStore.put(record);
+    };
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
   });
 }
 

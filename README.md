@@ -59,20 +59,39 @@ Deploy sonrası bilinmesi gerekenler:
 - **Platform odaklı gezinme** — ana ekranda binlerce satır yerine önce platformlar; `/provider/netflix`
   gibi sayfalarda o platformun içerikleri raflar halinde.
 - **Film / dizi detayı** — TMDB posteri, backdrop, puan, süre, tür, oyuncular; dizilerde sezon-bölüm listesi.
-- **Oynatıcı** — HLS (hls.js) ve progressive MP4; kalite seçimi, klavye kısayolları (boşluk, ←/→, ↑/↓, M, F),
-  kaldığı yerden devam, sonraki bölüme otomatik geçiş, CORS engelli kaynaklar için proxy ile tekrar deneme.
-- **Canlı TV** — gruplara/ülkelere ayrılmış kanal listesi ve yandaki panelde anlık izleme.
+- **Oynatıcı** — üç motor: HLS (hls.js), ham MPEG-TS (mpegts.js — IPTV panellerinin `.ts` kanalları
+  tarayıcıda başka türlü açılmaz) ve progressive MP4. Bir kaynak açılmazsa sırayla `.m3u8` varyantı,
+  doğrudan bağlantı ve proxy denenir. Kalite seçimi, klavye kısayolları (boşluk, ←/→, ↑/↓, M, F),
+  kaldığı yerden devam, sonraki bölüme otomatik geçiş.
+- **Altyazı ve ses dili** — yayında gömülü altyazı/ses parçaları varsa (HLS) oynatıcı menüsünden seçilir;
+  yoksa kendi `.srt` / `.vtt` dosyanı yükleyebilirsin (SRT otomatik VTT'ye çevrilir).
+- **Canlı TV** — kanallar **Spor, Ulusal, Haber, Çocuk, Belgesel, Sinema, Müzik** kategorilerine ayrılır;
+  kategori içinde sağlayıcının kendi grupları alt filtre olarak kalır, seçilen kanal yandaki panelde açılır.
 - **Favoriler, izleme geçmişi, global arama, ayarlar** — hepsi cihazda saklanır.
 - **Birden fazla playlist** — içerikler tek kütüphanede birleşir; aynı içerik birden fazla listede varsa
   tekilleştirilip "alternatif kaynak" olarak sunulur.
 
 ## Bilinen sınırlar
 
+- **`.mkv` / `.avi` içerikler tarayıcıda açılmaz.** Hiçbir kütüphane bu konteynerleri çözemez; oynatıcı
+  bunu tespit edip "VLC gibi bir oynatıcıda izle" diyor. IPTV panellerindeki filmlerin bir kısmı bu formatta.
+- **Altyazı, dosyanın içindeyse okunamaz.** MP4/MKV içine gömülü altyazıları tarayıcı göstermez;
+  yalnızca HLS yayınındaki altyazı parçaları ya da senin yüklediğin `.srt`/`.vtt` çalışır.
+- **Ses dili değiştirme sadece HLS'te** mümkün (yayın birden fazla ses parçası sunuyorsa). MP4'te
+  Chrome ses parçalarını API'ye açmaz.
+- **Vercel'de playlist indirme çalışmayabilir.** IPTV panelleri veri merkezi IP'lerini sık sık engeller
+  (HTTP 403). Uygulama bu durumda listeyi senin tarayıcından çekmeyi dener; o da engellenirse
+  M3U dosyasını indirip "Dosya Yükle" ile ekleyebilirsin — bu yol her zaman çalışır.
+  Yayınların kendisi senin IP'nden gittiği için bu kısıt oynatmayı etkilemez.
 - Kimlik doğrulama / hesap sistemi yoktur; veriler tarayıcıda (IndexedDB + localStorage) tutulur.
-- Bazı IPTV kaynakları tarayıcıdan oynatılamaz (CORS, DRM, `mpegts` gibi tarayıcı desteklemeyen formatlar).
-  Bu durumda oynatıcı hatayı açıkça gösterir ve proxy ile tekrar denemeyi önerir.
 - EPG (yayın akışı) desteği yoktur; `tvg-id` saklanır ama kullanılmaz.
 - Açık tema yoktur.
+
+## TMDB olmadan
+
+TMDB tamamen opsiyoneldir ve anahtar yoksa uygulama hiç TMDB isteği atmaz, uyarı da göstermez.
+Posterler için sırayla: TMDB (varsa) → M3U'nun kendi `tvg-logo` görseli → başlıktan üretilen renkli kapak.
+Çoğu IPTV sağlayıcısı zaten poster gönderdiği için arayüz anahtarsız da dolu görünür.
 
 ## Teknoloji
 

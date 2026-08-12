@@ -4,6 +4,7 @@ import { CheckCircle2, Loader2, Plus, RefreshCw, Trash2, XCircle } from "lucide-
 import { useState } from "react";
 
 import { useTmdbConfigured } from "@/lib/hooks/useTmdb";
+import { PARSER_VERSION } from "@/lib/library/build";
 import { useLibraryStore } from "@/lib/store/libraryStore";
 import { useUiStore } from "@/lib/store/uiStore";
 import { useUserStore } from "@/lib/store/userStore";
@@ -67,6 +68,14 @@ export default function SettingsPage() {
                   {playlist.itemCount.toLocaleString("tr-TR")} içerik ·{" "}
                   {new Date(playlist.lastUpdated).toLocaleString("tr-TR")}
                 </p>
+                {playlist.source !== "demo" && playlist.parserVersion !== PARSER_VERSION && (
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-amber-300/90">
+                    Film/dizi/kanal ayrımı bu listeden sonra geliştirildi.{" "}
+                    {playlist.url
+                      ? "Yenile'ye basınca liste yeniden ayrıştırılır."
+                      : "Dosyayı tekrar yükleyerek yeni ayrımdan yararlanabilirsin."}
+                  </p>
+                )}
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
@@ -160,7 +169,10 @@ export default function SettingsPage() {
       </Section>
 
       {/* Oynatıcı */}
-      <Section title="Oynatıcı" description="Video oynatma davranışı.">
+      <Section
+        title="Oynatıcı"
+        description="Video oynatma davranışı. Altyazı ve ses dili seçimi oynatıcının kendi menüsünde."
+      >
         <Toggle
           label="Otomatik oynat"
           description="İçerik açıldığında oynatma hemen başlar."

@@ -75,6 +75,11 @@ test("cleanTitle: yıl ve kalite etiketlerini temizler", () => {
   });
 });
 
+test("cleanTitle: boşluksuz ülke önekini de temizler", () => {
+  assert.deepEqual(cleanTitle("TR:GREY'S ANATOMY"), { title: "GREY'S ANATOMY", year: undefined });
+  assert.deepEqual(cleanTitle("EN|The Office"), { title: "The Office", year: undefined });
+});
+
 test("cleanTitle: iki nokta içeren başlıkları bozmaz", () => {
   assert.deepEqual(cleanTitle("Dune: Part Two (2024)"), { title: "Dune: Part Two", year: 2024 });
   assert.deepEqual(cleanTitle("Spider-Man: No Way Home"), {
@@ -104,6 +109,48 @@ test("detectContentType: VOD platformlarındaki .m3u8 içerikleri canlı sayılm
   assert.equal(
     detectContentType("AMAZON PRIME VIDEO | Dram", "Air", "http://a/b.m3u8", -1, "prime-video"),
     "movie",
+  );
+});
+
+test("detectContentType: Türkçe ekli grup adlarını doğru okur", () => {
+  // "Filmleri" eki yüzünden çocuk kanalı sanılmamalı
+  assert.equal(detectContentType("Türk Çocuk Filmleri", "Rio", "http://a/b.mp4", -1), "movie");
+  assert.equal(detectContentType("Türk Dizileri", "Yalı Çapkını", "http://a/b.mp4", -1), "series");
+  assert.equal(detectContentType("Spor Kanalları", "beIN 1", "http://a/b.m3u8", -1), "sports");
+  assert.equal(detectContentType("Haberler", "NTV", "http://a/b.m3u8", -1), "news");
+  assert.equal(detectContentType("Çocuk Kanalları", "TRT Çocuk", "http://a/b.m3u8", -1), "kids");
+});
+
+test("detectContentType: Xtream adres şeması grup adından üstündür", () => {
+  // Grup adı "Movies" dese bile adres /series/ diyorsa dizidir
+  assert.equal(
+    detectContentType("VOD | Movies", "Kızılcık Şerbeti", "http://h:8080/series/u/p/9.mkv", -1),
+    "series",
+  );
+  assert.equal(
+    detectContentType("Bilinmeyen Grup", "Inception", "http://h:8080/movie/u/p/9.mkv", -1),
+    "movie",
+  );
+  assert.equal(detectContentType("Bilinmeyen", "TRT 1", "http://h:8080/live/u/p/9.ts", -1), "live");
+  // Canlı adreste grup "spor" diyorsa alt tip korunur
+  assert.equal(detectContentType("TR | SPOR", "beIN 1", "http://h:8080/live/u/p/9.ts", -1), "sports");
+});
+
+test("buildLibraryFromEntries: S/E taşımayan /series/ kayıtlarını gruba göre toplar", () => {
+  const text = [
+    '#EXTINF:-1 tvg-name="Bölüm 1" group-title="TR | DİZİLER | Kızılcık Şerbeti",Bölüm 1',
+    "http://h:8080/series/u/p/1.mp4",
+    '#EXTINF:-1 tvg-name="Bölüm 2" group-title="TR | DİZİLER | Kızılcık Şerbeti",Bölüm 2',
+    "http://h:8080/series/u/p/2.mp4",
+  ].join("\n");
+
+  const { series } = buildLibraryFromEntries(parseM3U(text), "pl1");
+  assert.equal(series.length, 1);
+  assert.equal(series[0].title, "Kızılcık Şerbeti");
+  assert.equal(series[0].episodeCount, 2);
+  assert.deepEqual(
+    series[0].seasons[0].episodes.map((episode) => episode.episode),
+    [1, 2],
   );
 });
 

@@ -53,9 +53,11 @@ M3U URL/dosya
   → sayfalar/bileşenler
 ```
 
-TMDB bu akışın dışındadır: içerik kartı **görünür alana girdiğinde** `lib/tmdb/client.ts` üzerinden
-tek tek sorgulanır (eşzamanlı 4 istek, sonuçlar IndexedDB'de 14 gün cache'lenir). 10.000 içerikli bir
-kütüphanede toplu TMDB eşleştirmesi yapılmaz — bu bilinçli bir tasarım kararıdır.
+TMDB bu akışın dışındadır ve **tamamen opsiyoneldir**: `TMDB_API_KEY` tanımlı değilse
+`lib/tmdb/client.ts` hiç istek atmaz (`tmdbStatus()` tek sefer sorulur), arayüz uyarı da göstermez —
+poster olarak M3U'nun kendi `tvg-logo` görselleri ya da başlıktan üretilen kapaklar kullanılır.
+Anahtar varsa: içerik kartı **görünür alana girdiğinde** tek tek sorgulanır (eşzamanlı 4 istek,
+sonuçlar IndexedDB'de 14 gün cache'lenir). 10.000 içerikli bir kütüphanede toplu eşleştirme yapılmaz.
 
 ### Katmanlar
 
@@ -64,7 +66,10 @@ kütüphanede toplu TMDB eşleştirmesi yapılmaz — bu bilinçli bir tasarım 
 | Parser | `lib/m3u/parser.ts` | Saf fonksiyon, DOM'a bağımlı değil, testleri var |
 | Sınıflandırma | `lib/m3u/classify.ts` | Tip tespiti, S/E ayrıştırma, başlık temizleme, ülke tahmini |
 | Provider config | `lib/config/providers.ts` | **Yeni platform eklemek için tek dokunulacak yer** (`aliases` dizisi) |
-| Kütüphane derleme | `lib/library/build.ts` | RawEntry[] → ContentItem[]/SeriesItem[], playlist birleştirme |
+| Kanal kategorileri | `lib/library/channelCategories.ts` | Canlı kanalları Spor/Ulusal/Haber/Çocuk… kovalarına ayırır |
+| Kütüphane derleme | `lib/library/build.ts` | RawEntry[] → ContentItem[]/SeriesItem[], playlist birleştirme, `PARSER_VERSION` |
+| Oynatma motoru seçimi | `lib/player/stream.ts` | Adres → HLS/MPEG-TS/progressive + deneme sırası |
+| Altyazı | `lib/player/subtitles.ts` | SRT→VTT dönüşümü, dil etiketleri |
 | Kalıcılık | `lib/storage/*` | IndexedDB (playlist/içerik) + localStorage (tercihler) |
 | State | `lib/store/*` | zustand: `libraryStore`, `userStore`, `uiStore` |
 | TMDB | `lib/tmdb/server.ts` (sunucu) + `lib/tmdb/client.ts` (kuyruk/cache) | |
@@ -86,6 +91,29 @@ export'larını değiştirmek yeterlidir. Uygulamanın hiçbir yeri IndexedDB'yi
   Oynatıcı, CORS kaynaklı hata alınca kullanıcıya "Proxy ile tekrar dene" seçeneği sunar.
 - `GET /api/tmdb/{status,search,details}` — TMDB erişiminin tek kapısı.
 
+## Oynatma zinciri (kritik)
+
+Gerçek IPTV panelleri (Xtream Codes) üç tip adres verir ve tarayıcı bunların yalnızca birini
+doğrudan açabilir:
+
+| Adres | Motor |
+|---|---|
+| `.../live/USER/PASS/1.ts` (ham MPEG-TS) | `mpegts.js` — tarayıcı native açamaz |
+| `.../live/USER/PASS/1.m3u8` | `hls.js` |
+| `.../movie|series/USER/PASS/1.mp4` | native `<video>` |
+
+`buildSourceCandidates()` şu sırayla dener ve her hata sonrası otomatik bir sonrakine geçer:
+**`.ts` → `.m3u8` varyantı → doğrudan → proxy'li HLS → proxy'li orijinal.** Çoğu panel aynı kanalı
+`.m3u8` olarak da sunduğu için ilk aday genelde tutar.
+
+Dikkat:
+- **`mpegts.js` `enableWorker: false` ile kullanılmalı.** Worker kodu Blob olarak üretiliyor ve
+  bundler'ın modül referansları worker içinde çözülemiyor ("… is not a constructor").
+- **`video.load()` boş `src` ile "error" olayı fırlatır.** `tearingDown` ref'i olmadan bu, gerçek
+  yayın hatası sanılıp aday zincirini boşuna ilerletir (kaynak çalışırken bile).
+- `.mkv` / `.avi` hiçbir motorla açılamaz; `isUnsupportedContainer()` bunu tespit edip kullanıcıya
+  "VLC ile izle" diyor — sessizce başarısız olmuyor.
+
 ## Bu kod tabanında dikkat edilecekler
 
 - **zustand selector'ları yeni referans döndürmemeli.** `useUserStore((s) => Object.values(s.favorites))`
@@ -95,9 +123,14 @@ export'larını değiştirmek yeterlidir. Uygulamanın hiçbir yeri IndexedDB'yi
   "render sırasında state ayarlama" kalıbı kullanılıyor (`SmartImage`, `usePagedList`, `Header`).
 - **`SmartImage`'a `absolute` sınıfı verilmez** — bileşenin kökü zaten `relative`; konumlandırma için
   sarmalayıcı div kullanılır (aksi halde Tailwind sınıf çakışması sessizce layout'u bozar).
-- **Sınıflandırma sırası önemlidir** (`detectContentType`): önce grup adı (canlı/spor/haber kısa devre),
+- **Sınıflandırma sırası önemlidir** (`detectContentType`): önce Xtream adres şeması
+  (`/live/`, `/movie/`, `/series/` — en güvenilir sinyal), sonra grup adı (canlı/spor/haber kısa devre),
   sonra S/E kalıbı, sonra isim, sonra yıl/provider/URL ipuçları. Bu sıra "News 24x7" gibi kanalların
   dizi sanılmasını engeller; değiştirirken `tests/m3u.test.ts` çalıştırın.
+- **Anahtar kelimeler Türkçe eklere duyarlı.** `TYPE_KEYWORDS` içinde `film*` yazmak "filmler",
+  "filmleri", "filmi" varyantlarını da yakalar. Bu olmadan "Türk Çocuk Filmleri" grubu kanal sanılıyordu.
+- **Sınıflandırma değişince `PARSER_VERSION`'ı artırın** (`lib/library/build.ts`). Ham M3U metni
+  saklanmadığı için eski kütüphaneler otomatik güncellenemez; Ayarlar sayfası "yenile" uyarısı gösterir.
 - **Gerçek listeler devasadır.** 10.000+ kayıt normaldir: parse `parseM3UChunked` ile parçalanır,
   listeler `usePagedList` ile kademeli render edilir, posterler `useInView` ile lazy yüklenir.
 - **Sahte özellik yok.** Çalışmayan bir şey varsa (TMDB anahtarı yok, stream ölü, kaynak CORS engelli)

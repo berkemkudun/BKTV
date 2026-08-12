@@ -15,10 +15,14 @@ const GRADIENTS = [
   ["#b91c1c", "#2c0b0b"],
 ];
 
-/** Başlıktan deterministik bir gradient seçer — aynı içerik her zaman aynı görünür. */
-export function fallbackGradient(seed: string): string {
+/** Başlıktan deterministik renk çifti — aynı içerik her zaman aynı görünür. */
+export function fallbackColors(seed: string): [string, string] {
   const index = Number.parseInt(hash(seed), 36) % GRADIENTS.length;
-  const [from, to] = GRADIENTS[index];
+  return GRADIENTS[index] as [string, string];
+}
+
+export function fallbackGradient(seed: string): string {
+  const [from, to] = fallbackColors(seed);
   return `radial-gradient(120% 90% at 20% 0%, ${from} 0%, ${to} 62%, #08080e 100%)`;
 }
 

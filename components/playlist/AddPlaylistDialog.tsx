@@ -170,6 +170,14 @@ export function AddPlaylistDialog() {
                 Adresin sadece bu cihazda saklanır.
               </p>
 
+              {/output=ts/i.test(url) && (
+                <p className="mt-2 rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2 text-[12px] leading-relaxed text-fg-muted">
+                  Bu adres <code className="text-fg">output=ts</code> istiyor: kanallar ham MPEG-TS gelir ve
+                  tarayıcıda daha yavaş açılır. <code className="text-fg">output=m3u8</code> yaparsan
+                  sağlayıcı HLS verir, oynatma anında başlar. (Oynatıcı yine de ikisini de dener.)
+                </p>
+              )}
+
               <button
                 type="submit"
                 disabled={busy || !url.trim()}

@@ -112,6 +112,12 @@ export interface Playlist {
   source: "url" | "file" | "demo";
   lastUpdated: number;
   itemCount: number;
+  /**
+   * Bu liste hangi sınıflandırma sürümüyle ayrıştırıldı.
+   * Parser/sınıflandırma geliştiğinde eski listeler "yenile" uyarısı alır
+   * (ham M3U metni saklanmadığı için yeniden indirmek gerekir).
+   */
+  parserVersion?: number;
   /** Son yenilemede hata alındıysa */
   error?: string;
 }

@@ -5,13 +5,22 @@ import type { ContentType, SeriesRef } from "@/lib/types";
  * İçerik tipi tespiti.
  * Sıralama önemli: dizi kalıbı (S01E01) grup adından daha güçlü bir sinyaldir.
  */
+/**
+ * Sonuna `*` konan kelimeler Türkçe eklerle birlikte eşleşir:
+ * "film*" → film, filmler, filmleri, filmi …
+ * Bu şart, "Türk Çocuk Filmleri" gibi VOD gruplarının kanal sanılmasını engeller —
+ * sıra da bu yüzden önemli: film/dizi sinyali, çocuk/spor/haber'den önce gelir.
+ */
 const TYPE_KEYWORDS: { type: ContentType; keywords: string[] }[] = [
-  { type: "series", keywords: ["series", "serie", "dizi", "diziler", "tv shows", "shows", "sezon", "season"] },
-  { type: "movie", keywords: ["movies", "movie", "film", "filmler", "vod", "sinema", "cinema"] },
-  { type: "kids", keywords: ["kids", "cocuk", "cizgi", "cartoon", "anime", "animation", "animasyon", "child"] },
-  { type: "sports", keywords: ["sports", "spor", "futbol", "football", "bein", "dazn", "espn", "s sport", "nba", "ufc"] },
-  { type: "news", keywords: ["news", "haber", "haberler"] },
-  { type: "live", keywords: ["live", "canli", "channels", "kanal", "kanallar", "tv", "iptv", "ulusal", "yerel"] },
+  { type: "series", keywords: ["series", "serie", "dizi*", "tv shows", "shows", "sezon*", "season"] },
+  { type: "movie", keywords: ["movie*", "film*", "vod", "sinema*", "cinema"] },
+  { type: "kids", keywords: ["kids", "cocuk*", "cizgi*", "cartoon*", "anime", "animation", "animasyon", "child"] },
+  {
+    type: "sports",
+    keywords: ["sport*", "spor*", "futbol*", "football", "bein", "dazn", "espn", "s sport", "nba", "ufc"],
+  },
+  { type: "news", keywords: ["news", "haber*"] },
+  { type: "live", keywords: ["live", "canli*", "channels", "kanal*", "tv", "iptv", "ulusal", "yerel"] },
 ];
 
 /** Yalnızca VOD sunan platformlar — bu gruplarda "canlı" varsayımı yanlış olur. */
@@ -47,6 +56,17 @@ export function detectContentType(
   duration: number,
   providerSlug?: string,
 ): ContentType {
+  // 1) Xtream Codes adres şeması en kesin sinyaldir; grup adına hiç bakmaya gerek yok:
+  //    .../live/USER/PASS/1.ts  ·  .../movie/USER/PASS/1.mkv  ·  .../series/USER/PASS/1.mkv
+  const xtream = detectXtreamKind(url);
+  if (xtream === "movie") return "movie";
+  if (xtream === "series") return "series";
+  if (xtream === "live") {
+    // Canlı olduğu kesin; grup adı spor/haber/çocuk diyorsa o alt tipi koru.
+    const groupHint = matchTypeKeywords(group);
+    return groupHint === "sports" || groupHint === "news" || groupHint === "kids" ? groupHint : "live";
+  }
+
   // Grup adı en güvenilir sinyal. Canlı/spor/haber gruplarında kanal isimleri
   // yanlışlıkla bölüm kalıbına benzeyebilir ("News 24x7"), bu yüzden önce grup bakılır.
   const groupType = matchTypeKeywords(group);
@@ -73,15 +93,50 @@ export function detectContentType(
   return "other";
 }
 
+/**
+ * Xtream Codes ve türevi panellerin adres şeması:
+ *   http://host:8080/live/USER/PASS/12345.ts
+ *   http://host:8080/movie/USER/PASS/12345.mkv
+ *   http://host:8080/series/USER/PASS/12345.mp4
+ * Bu segment, grup adından çok daha güvenilir bir tip bilgisidir.
+ */
+export function detectXtreamKind(url: string): "live" | "movie" | "series" | null {
+  if (!url) return null;
+  let path: string;
+  try {
+    path = new URL(url, "http://x").pathname.toLowerCase();
+  } catch {
+    path = url.toLowerCase();
+  }
+  if (/(^|\/)series\//.test(path)) return "series";
+  if (/(^|\/)(movie|movies|vod)\//.test(path)) return "movie";
+  if (/(^|\/)live\//.test(path)) return "live";
+  return null;
+}
+
 function matchTypeKeywords(value: string): ContentType | null {
   if (!value) return null;
   const haystack = normalizeForMatch(value);
   for (const { type, keywords } of TYPE_KEYWORDS) {
     for (const keyword of keywords) {
-      if (new RegExp(`(^| )${escapeRegExp(keyword)}( |$)`).test(haystack)) return type;
+      if (keywordRegExp(keyword).test(haystack)) return type;
     }
   }
   return null;
+}
+
+const KEYWORD_CACHE = new Map<string, RegExp>();
+
+/** `film*` → /(^| )film[a-z0-9]*( |$)/ · `news` → /(^| )news( |$)/ */
+function keywordRegExp(keyword: string): RegExp {
+  const cached = KEYWORD_CACHE.get(keyword);
+  if (cached) return cached;
+
+  const stem = keyword.endsWith("*");
+  const base = escapeRegExp(stem ? keyword.slice(0, -1) : keyword);
+  const pattern = new RegExp(`(^| )${base}${stem ? "[a-z0-9]*" : ""}( |$)`);
+  KEYWORD_CACHE.set(keyword, pattern);
+  return pattern;
 }
 
 const SERIES_PATTERNS: RegExp[] = [
@@ -130,7 +185,8 @@ export function cleanTitle(rawTitle: string): { title: string; year?: number } {
 
   // Baştaki ülke/kalite öneklerini at ("TR |", "EN -", "4K:").
   // Sadece bilinen kodlar temizlenir — aksi halde "Dune: Part Two" gibi başlıklar bozulur.
-  const prefixMatch = title.match(/^\s*([A-Za-z0-9+]{2,4})\s*[|:\-–]\s+/);
+  // Ayraçtan sonra boşluk şart değil: "TR:GREY'S ANATOMY" da temizlenmeli.
+  const prefixMatch = title.match(/^\s*([A-Za-z0-9+]{2,4})\s*[|:\-–]\s*/);
   if (prefixMatch && PREFIX_CODES.has(prefixMatch[1].toLowerCase())) {
     title = title.slice(prefixMatch[0].length);
   }
