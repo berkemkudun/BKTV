@@ -106,13 +106,21 @@ doğrudan açabilir:
 **`.ts` → `.m3u8` varyantı → doğrudan → proxy'li HLS → proxy'li orijinal.** Çoğu panel aynı kanalı
 `.m3u8` olarak da sunduğu için ilk aday genelde tutar.
 
+Hata durumunda `lib/player/diagnose.ts` devreye girer: `/api/probe` adresi sunucudan yoklar
+(sadece başlıklar, gövde indirilmez) ve tarayıcının `MediaError.message`'ıyla birleştirip somut bir
+sebep üretir — "503 sağlayıcı kapalı" ile "kodek desteklenmiyor" birbirinden ayrılır.
+Genel "bilinmeyen hata" mesajı yazmayın; kullanıcı ne yapacağını bilmeli.
+
 Dikkat:
 - **`mpegts.js` `enableWorker: false` ile kullanılmalı.** Worker kodu Blob olarak üretiliyor ve
   bundler'ın modül referansları worker içinde çözülemiyor ("… is not a constructor").
 - **`video.load()` boş `src` ile "error" olayı fırlatır.** `tearingDown` ref'i olmadan bu, gerçek
   yayın hatası sanılıp aday zincirini boşuna ilerletir (kaynak çalışırken bile).
-- `.mkv` / `.avi` hiçbir motorla açılamaz; `isUnsupportedContainer()` bunu tespit edip kullanıcıya
-  "VLC ile izle" diyor — sessizce başarısız olmuyor.
+- **`.mkv` "açılmaz" değildir.** Chrome, içinde H.264/AAC olan Matroska dosyalarını oynatıyor
+  (gerçek listeyle test edildi). `isUnsupportedContainer()` yalnızca AVI/FLV/WMV gibi gerçekten
+  desteklenmeyenleri işaretler; MKV `isRiskyContainer()` altında "kodek riski" olarak geçer.
+- **IPTV hesaplarının eşzamanlı bağlantı limiti vardır (1-2).** Bu yüzden Canlı TV sayfası kanalı
+  otomatik başlatmaz ve aday zinciri sıralı çalışır. Boşa açılan her yayın gerçek isteğe 503 döndürtür.
 
 ## Bu kod tabanında dikkat edilecekler
 

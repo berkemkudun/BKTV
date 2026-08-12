@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   buildSourceCandidates,
   detectStreamKind,
+  isRiskyContainer,
   isUnsupportedContainer,
   toHlsVariant,
 } from "@/lib/player/stream";
@@ -46,10 +47,13 @@ test("buildSourceCandidates: aynı adres iki kez denenmez", () => {
   assert.equal(urls.size, candidates.length);
 });
 
-test("isUnsupportedContainer: tarayıcının açamayacağı formatları bilir", () => {
-  assert.equal(isUnsupportedContainer("http://h/movie/u/p/1.mkv"), true);
+test("isUnsupportedContainer: sadece gerçekten desteklenmeyenleri işaretler", () => {
   assert.equal(isUnsupportedContainer("http://h/movie/u/p/1.avi"), true);
+  assert.equal(isUnsupportedContainer("http://h/movie/u/p/1.flv"), true);
   assert.equal(isUnsupportedContainer("http://h/movie/u/p/1.mp4"), false);
+  // MKV Chrome'da (H.264/AAC ise) oynuyor — "asla açılmaz" demek yanlış olurdu
+  assert.equal(isUnsupportedContainer("http://h/movie/u/p/1.mkv"), false);
+  assert.equal(isRiskyContainer("http://h/movie/u/p/1.mkv"), true);
 });
 
 test("srtToVtt: SubRip'i WebVTT'ye çevirir", () => {

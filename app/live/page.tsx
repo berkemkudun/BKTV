@@ -82,8 +82,15 @@ function LiveTvBrowser() {
 
   const { visible, sentinelRef, hasMore } = usePagedList(filtered, 80);
 
+  /**
+   * Otomatik seçim YOK — bilinçli.
+   *
+   * IPTV hesaplarının eşzamanlı bağlantı limiti vardır (çoğu zaman 1-2). Kategori
+   * her değiştiğinde listenin ilk kanalını kendiliğinden açmak bu limiti tüketip
+   * kullanıcının gerçekten açmak istediği kanala 503 döndürüyordu.
+   */
   const selected = useMemo(
-    () => filtered.find((channel) => channel.id === selectedId) ?? filtered[0] ?? null,
+    () => filtered.find((channel) => channel.id === selectedId) ?? null,
     [filtered, selectedId],
   );
 
@@ -234,8 +241,13 @@ function LiveTvBrowser() {
               </div>
             </div>
           ) : (
-            <div className="grid aspect-video place-items-center rounded-2xl border border-white/8 bg-ink-900 text-fg-dim">
-              <Radio className="h-8 w-8" />
+            <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-2xl border border-white/8 bg-ink-900 px-6 text-center">
+              <Radio className="h-8 w-8 text-fg-dim" />
+              <p className="text-[14px] font-semibold">İzlemek için bir kanal seç</p>
+              <p className="max-w-[280px] text-[12.5px] leading-relaxed text-fg-dim">
+                Kanallar otomatik başlatılmıyor: IPTV hesaplarının eşzamanlı bağlantı limiti var,
+                boşa açılan yayın istediğin kanalı engelleyebiliyor.
+              </p>
             </div>
           )}
         </div>

@@ -21,12 +21,8 @@ import type Hls from "hls.js";
 import type MpegtsPlayerType from "mpegts.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  type StreamCandidate,
-  buildSourceCandidates,
-  containerLabel,
-  isUnsupportedContainer,
-} from "@/lib/player/stream";
+import { type Diagnosis, diagnose, probeStream } from "@/lib/player/diagnose";
+import { type StreamCandidate, buildSourceCandidates } from "@/lib/player/stream";
 import { languageLabel, subtitleFileToUrl } from "@/lib/player/subtitles";
 
 export interface VideoPlayerProps {
@@ -90,6 +86,8 @@ export function VideoPlayer({
   const [fullscreen, setFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [failed, setFailed] = useState(false);
+  /** Tarayıcının kendi hata metni — kodek sorunlarını ayırt etmek için tanıya besleniyor. */
+  const [mediaErrorMessage, setMediaErrorMessage] = useState<string | undefined>(undefined);
 
   const [levels, setLevels] = useState<TrackOption[]>([]);
   const [currentLevel, setCurrentLevel] = useState(-1);
@@ -318,6 +316,7 @@ export function VideoPlayer({
       // Sökme sırasındaki "Empty src attribute" hatasını gerçek yayın hatası sanma.
       if (tearingDown.current) return;
       if (video.networkState === video.NETWORK_EMPTY) return;
+      if (video.error?.message) setMediaErrorMessage(video.error.message);
       failCandidate();
     };
     const onVolume = () => {
@@ -533,10 +532,22 @@ export function VideoPlayer({
         </div>
       )}
 
-      {failed && <FailureScreen src={src} onBack={onBack} onRetry={() => {
-        setFailed(false);
-        setCandidateIndex(0);
-      }} />}
+      {failed && (
+        <FailureScreen
+          src={src}
+          mediaErrorMessage={mediaErrorMessage}
+          onBack={onBack}
+          onRetry={() => {
+            setFailed(false);
+            setCandidateIndex(0);
+          }}
+          onRetryWithProxy={() => {
+            setFailed(false);
+            // Proxy'li adaylar zincirin ikinci yarısında.
+            setCandidateIndex(candidates.findIndex((candidate) => candidate.viaProxy));
+          }}
+        />
+      )}
 
       {/* Üst bar */}
       <div
@@ -777,17 +788,36 @@ export function VideoPlayer({
   );
 }
 
-/** Tüm kaynak adayları tükendiğinde gösterilen tanı ekranı. */
+/**
+ * Tüm kaynak adayları tükendiğinde gösterilen tanı ekranı.
+ * Tahmin yürütmez: adresi sunucudan yoklar (/api/probe) ve tarayıcının kendi
+ * MediaError mesajıyla birleştirip somut bir sebep gösterir.
+ */
 function FailureScreen({
   src,
+  mediaErrorMessage,
   onBack,
   onRetry,
+  onRetryWithProxy,
 }: {
   src: string;
+  mediaErrorMessage?: string;
   onBack?: () => void;
   onRetry: () => void;
+  onRetryWithProxy: () => void;
 }) {
-  const unsupported = isUnsupportedContainer(src);
+  const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    probeStream(src).then((probe) => {
+      if (!cancelled) setDiagnosis(diagnose(src, mediaErrorMessage, probe));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [src, mediaErrorMessage]);
 
   return (
     <div className="absolute inset-0 z-30 grid place-items-center bg-black/85 p-6">
@@ -795,21 +825,20 @@ function FailureScreen({
         <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-accent/15 text-accent">
           <AlertTriangle className="h-7 w-7" />
         </span>
-        <h3 className="mt-4 text-[19px] font-bold">Yayın açılamadı</h3>
 
-        <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">
-          {unsupported ? (
-            <>
-              Bu içerik <strong className="text-fg">{containerLabel(src)}</strong> formatında. Tarayıcılar bu
-              konteyneri hiçbir eklentiyle açamaz — dosyayı VLC gibi bir oynatıcıda izlemen gerekir.
-            </>
-          ) : (
-            <>
-              Doğrudan bağlantı, HLS varyantı ve proxy denendi; hiçbiri yanıt vermedi. Kaynak kapalı olabilir,
-              aynı hesapla başka bir cihazda yayın açık olabilir ya da sağlayıcı bu bağlantıyı engelliyor olabilir.
-            </>
-          )}
-        </p>
+        {diagnosis ? (
+          <>
+            <h3 className="mt-4 text-[19px] font-bold">{diagnosis.title}</h3>
+            <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">{diagnosis.detail}</p>
+          </>
+        ) : (
+          <>
+            <h3 className="mt-4 text-[19px] font-bold">Yayın açılamadı</h3>
+            <p className="mt-2 flex items-center justify-center gap-2 text-[14px] text-fg-muted">
+              <Loader2 className="h-4 w-4 animate-spin" /> Sebep araştırılıyor…
+            </p>
+          </>
+        )}
 
         <div className="mt-5 flex flex-wrap justify-center gap-3">
           <button
@@ -819,14 +848,29 @@ function FailureScreen({
           >
             Baştan dene
           </button>
-          <a
-            href={src}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-xl border border-white/12 bg-white/5 px-4 py-2.5 text-[14px] font-semibold transition-colors hover:bg-white/10"
-          >
-            Bağlantıyı aç
-          </a>
+
+          {diagnosis?.suggestProxy && (
+            <button
+              type="button"
+              onClick={onRetryWithProxy}
+              className="rounded-xl border border-white/12 bg-white/5 px-4 py-2.5 text-[14px] font-semibold transition-colors hover:bg-white/10"
+            >
+              Proxy ile dene
+            </button>
+          )}
+
+          {diagnosis?.suggestExternal && (
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard?.writeText(src).then(() => setCopied(true));
+              }}
+              className="rounded-xl border border-white/12 bg-white/5 px-4 py-2.5 text-[14px] font-semibold transition-colors hover:bg-white/10"
+            >
+              {copied ? "Kopyalandı ✓" : "Bağlantıyı kopyala (VLC için)"}
+            </button>
+          )}
+
           {onBack && (
             <button
               type="button"

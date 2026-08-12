@@ -28,9 +28,20 @@ export function detectStreamKind(url: string): StreamKind {
   return "progressive";
 }
 
-/** Tarayıcının hiçbir şekilde açamayacağı konteynerler (MSE'de de desteklenmez). */
+/**
+ * Tarayıcının hiçbir şekilde açamayacağı konteynerler.
+ *
+ * Not: .mkv bilinçli olarak bu listede DEĞİL — Chrome, içinde H.264/AAC olan
+ * Matroska dosyalarını oynatabiliyor (test edildi). MKV'de sorun konteyner değil,
+ * içindeki kodek olur; o da probe + MediaError ile ayırt ediliyor.
+ */
 export function isUnsupportedContainer(url: string): boolean {
-  return /\.(mkv|avi|flv|wmv|rmvb)(\?|$)/i.test(pathOf(url));
+  return /\.(avi|flv|wmv|rmvb|mpg|mpeg|divx)(\?|$)/i.test(pathOf(url));
+}
+
+/** Kodek riski yüksek konteynerler: açılabilir ama garanti değil. */
+export function isRiskyContainer(url: string): boolean {
+  return /\.(mkv|m2ts|ts)(\?|$)/i.test(pathOf(url));
 }
 
 export function containerLabel(url: string): string {

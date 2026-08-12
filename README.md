@@ -71,6 +71,23 @@ Deploy sonrası bilinmesi gerekenler:
 - **Birden fazla playlist** — içerikler tek kütüphanede birleşir; aynı içerik birden fazla listede varsa
   tekilleştirilip "alternatif kaynak" olarak sunulur.
 
+## Bir yayın açılmıyorsa
+
+Oynatıcı hata verdiğinde tahmin yürütmez: adresi sunucudan yoklar (`/api/probe`) ve tarayıcının kendi
+hata mesajıyla birleştirip **somut sebebi** yazar. Karşılaşabileceklerin:
+
+| Tanı | Anlamı | Ne yapmalı |
+|---|---|---|
+| **Sağlayıcı bu yayını vermiyor (503)** | Kanal sağlayıcıda kapalı, paketinde yok ya da eşzamanlı bağlantı limitin dolu | Başka kanal dene; diğer cihazlardaki yayınları kapat |
+| **Erişim reddedildi (401/403)** | Hesap süresi dolmuş veya şifre değişmiş | Sağlayıcıyla görüş |
+| **Tarayıcı bu kodeki açamıyor** | Dosya geliyor ama H.265/HEVC veya AC3/DTS içeriyor | Edge dene; ya da "Bağlantıyı kopyala" ile VLC'de aç |
+| **Bu format tarayıcıda açılmaz** | AVI/FLV/WMV | VLC gerekir |
+| **Kaynak tarayıcı isteğini engelliyor** | Sağlayıcı CORS izni göndermiyor | "Proxy ile dene" butonu |
+
+**Eşzamanlı bağlantı limiti önemlidir.** IPTV hesaplarının çoğu aynı anda 1-2 yayına izin verir. Bu yüzden
+Canlı TV sayfası kanalları **otomatik başlatmaz** — boşa açılan bir yayın, gerçekten izlemek istediğin
+kanala 503 döndürebiliyor.
+
 ## Bilinen sınırlar
 
 - **`.mkv` / `.avi` içerikler tarayıcıda açılmaz.** Hiçbir kütüphane bu konteynerleri çözemez; oynatıcı
