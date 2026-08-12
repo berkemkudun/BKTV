@@ -29,6 +29,27 @@ Anahtar **tarayıcıya hiç gönderilmez**; tüm istekler `/api/tmdb/*` üzerind
 Anahtar yoksa uygulama çalışmaya devam eder: poster/afiş yerine başlıktan üretilen renkli kapaklar,
 açıklama yerine "TMDB'de eşleştirilemedi" bilgisi gösterilir.
 
+## Vercel'e deploy
+
+Depoyu Vercel'de **Import Project** ile bağlamak yeterli — framework otomatik algılanır, ek build ayarı gerekmez.
+
+Tek zorunlu adım: **Project Settings → Environment Variables** altına `TMDB_API_KEY` ekleyin
+(Production + Preview + Development). İsteğe bağlı: `TMDB_LANGUAGE` (varsayılan `tr-TR`), `TMDB_REGION`.
+
+Ayarlanmış olanlar:
+
+- `vercel.json` — fonksiyonlar `fra1` (Frankfurt) bölgesinde çalışır; Türkiye'den gecikme en düşük olur.
+- `/api/playlist` ve `/api/proxy` için `maxDuration = 60` — büyük M3U listeleri varsayılan 10 sn'ye sığmaz.
+
+Deploy sonrası bilinmesi gerekenler:
+
+- Playlistler ve izleme geçmişi **sunucuda değil, her kullanıcının tarayıcısında** durur. Deploy edilen
+  adres herkese açıksa da kimse başkasının listesini görmez; ortak bir "içerik havuzu" oluşmaz.
+- Stream proxy'si HLS ile sorunsuz çalışır (her segment kısa bir istektir). Tek parça MP4 aktarımı
+  60 saniyelik fonksiyon limitine takılabilir — bu durumda proxy'yi kapatıp doğrudan oynatmak gerekir.
+- Proxy'den geçen her megabayt Vercel bant genişliğinden düşer; yoğun kullanımda proxy'yi kapalı tutun
+  (Ayarlar → Oynatıcı → "Stream proxy'sini her zaman kullan").
+
 ## Ne yapar
 
 - **Playlist ekleme** — M3U URL'i veya `.m3u` / `.m3u8` dosyası. İndirme sunucu üzerinden yapılır, CORS sorunu yaşanmaz.

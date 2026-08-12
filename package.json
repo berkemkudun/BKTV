@@ -1,7 +1,10 @@
 {
-  "name": "stream-hub",
+  "name": "bktv",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.11"
+  },
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",

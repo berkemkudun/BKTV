@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Büyük listeler yavaş sunuculardan gelebiliyor; Vercel'in varsayılan 10sn'lik
+// fonksiyon süresi yetmez.
+export const maxDuration = 60;
 
 /**
  * M3U indirme proxy'si.
@@ -34,6 +37,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Sadece http/https adresleri desteklenir" }, { status: 400 });
   }
 
+  // Fonksiyon süresinden (maxDuration) önce kendimiz vazgeçelim ki kullanıcı
+  // platformun ham 504'ü yerine anlaşılır bir hata görsün.
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
 

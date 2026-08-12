@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// HLS segmentleri kısa isteklerdir; tek parça MP4 aktarımında ise bu süre üst sınırdır.
+export const maxDuration = 60;
 
 /**
  * Stream proxy'si (opsiyonel — Ayarlar > Oynatıcı'dan açılır, hata alınca otomatik denenir).
