@@ -52,7 +52,14 @@ Deploy sonrası bilinmesi gerekenler:
 
 ## Ne yapar
 
-- **Playlist ekleme** — M3U URL'i veya `.m3u` / `.m3u8` dosyası. İndirme sunucu üzerinden yapılır, CORS sorunu yaşanmaz.
+- **İçerik ekleme, üç yoldan**:
+  1. **Panel girişi** — sunucu adresi + kullanıcı adı + şifre (Xtream Codes ve türevleri). Hesap doğrulanır,
+     abonelik bitişi ve **eşzamanlı bağlantı limiti** gösterilir, liste panel destekliyorsa `m3u8` olarak
+     istenir (kanallar tarayıcıda çok daha hızlı açılır).
+  2. **M3U URL** — hazır bağlantıyı yapıştır.
+  3. **Dosya** — `.m3u` / `.m3u8` yükle (dosya cihazdan çıkmaz).
+
+  İndirme sunucu üzerinden yapılır, CORS sorunu yaşanmaz.
 - **Otomatik analiz** — `group-title` / `tvg-*` alanlarından platform (Netflix, Prime Video, Disney+, Max,
   Apple TV+, Spor, Canlı TV…), içerik tipi (film / dizi / canlı / spor / haber / çocuk), sezon-bölüm
   (`S01E02`, `1x02`, `Sezon 1 Bölüm 2`…), ülke ve kalite bilgisi çıkarılır.
@@ -87,6 +94,9 @@ hata mesajıyla birleştirip **somut sebebi** yazar. Karşılaşabileceklerin:
 **Eşzamanlı bağlantı limiti önemlidir.** IPTV hesaplarının çoğu aynı anda 1-2 yayına izin verir. Bu yüzden
 Canlı TV sayfası kanalları **otomatik başlatmaz** — boşa açılan bir yayın, gerçekten izlemek istediğin
 kanala 503 döndürebiliyor.
+
+Panel girişiyle eklenen listelerde limitini Ayarlar sayfasında görebilirsin: **Bağlantı: 0 / 1** gibi.
+"durumu yenile" bağlantısı paneli tekrar sorgular — başka bir cihazda açık yayın varsa oradan anlaşılır.
 
 ## Bilinen sınırlar
 

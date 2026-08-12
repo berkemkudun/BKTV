@@ -3,6 +3,7 @@
 import { CheckCircle2, Loader2, Plus, RefreshCw, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
 
+import { formatExpiry } from "@/components/playlist/AddPlaylistDialog";
 import { useTmdbConfigured } from "@/lib/hooks/useTmdb";
 import { PARSER_VERSION } from "@/lib/library/build";
 import { useLibraryStore } from "@/lib/store/libraryStore";
@@ -16,6 +17,7 @@ export default function SettingsPage() {
   const isDemo = useLibraryStore((state) => state.isDemo);
   const refreshPlaylist = useLibraryStore((state) => state.refreshPlaylist);
   const removePlaylist = useLibraryStore((state) => state.removePlaylist);
+  const refreshXtreamAccount = useLibraryStore((state) => state.refreshXtreamAccount);
   const openPlaylistDialog = useUiStore((state) => state.openPlaylistDialog);
 
   const player = useUserStore((state) => state.player);
@@ -26,7 +28,20 @@ export default function SettingsPage() {
   const tmdbConfigured = useTmdbConfigured();
 
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [accountBusyId, setAccountBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const handleAccountRefresh = async (id: string) => {
+    setAccountBusyId(id);
+    setError(null);
+    try {
+      await refreshXtreamAccount(id);
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : "Hesap durumu alınamadı");
+    } finally {
+      setAccountBusyId(null);
+    }
+  };
 
   const handleRefresh = async (id: string) => {
     setBusyId(id);
@@ -62,12 +77,47 @@ export default function SettingsPage() {
               <div className="min-w-0">
                 <p className="truncate text-[15px] font-semibold">{playlist.name}</p>
                 <p className="truncate text-[12.5px] text-fg-dim">
-                  {playlist.url ?? (playlist.source === "demo" ? "Yerleşik demo veri" : "Yüklenen dosya")}
+                  {playlist.source === "xtream" && playlist.xtream
+                    ? `${playlist.xtream.username} @ ${playlist.xtream.host}`
+                    : (playlist.url ??
+                      (playlist.source === "demo" ? "Yerleşik demo veri" : "Yüklenen dosya"))}
                 </p>
                 <p className="mt-0.5 text-[12px] text-fg-dim">
                   {playlist.itemCount.toLocaleString("tr-TR")} içerik ·{" "}
                   {new Date(playlist.lastUpdated).toLocaleString("tr-TR")}
                 </p>
+                {playlist.xtream && (
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+                    <span className="text-fg-dim">
+                      Abonelik:{" "}
+                      <span className="font-medium text-fg">
+                        {formatExpiry(playlist.xtream.expiresAt)}
+                      </span>
+                    </span>
+                    <span className="text-fg-dim">
+                      Bağlantı:{" "}
+                      <span
+                        className={`font-medium ${
+                          playlist.xtream.maxConnections &&
+                          (playlist.xtream.activeConnections ?? 0) >= playlist.xtream.maxConnections
+                            ? "text-amber-300"
+                            : "text-fg"
+                        }`}
+                      >
+                        {playlist.xtream.activeConnections ?? "?"} / {playlist.xtream.maxConnections ?? "?"}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleAccountRefresh(playlist.id)}
+                      disabled={accountBusyId === playlist.id}
+                      className="text-accent transition-opacity hover:opacity-80 disabled:opacity-50"
+                    >
+                      {accountBusyId === playlist.id ? "kontrol ediliyor…" : "durumu yenile"}
+                    </button>
+                  </div>
+                )}
+
                 {playlist.source !== "demo" && playlist.parserVersion !== PARSER_VERSION && (
                   <p className="mt-1.5 text-[12px] leading-relaxed text-amber-300/90">
                     Film/dizi/kanal ayrımı bu listeden sonra geliştirildi.{" "}

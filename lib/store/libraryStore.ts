@@ -6,7 +6,14 @@ import { DEMO_PLAYLIST_ID, buildDemoM3U } from "@/lib/demo/demoPlaylist";
 import { PARSER_VERSION, buildLibraryFromEntries, mergeLibraries } from "@/lib/library/build";
 import { parseM3UChunked } from "@/lib/m3u/parser";
 import { libraryRepository } from "@/lib/storage/repository";
-import type { ContentItem, Library, LibraryProvider, Playlist, SeriesItem } from "@/lib/types";
+import type {
+  ContentItem,
+  Library,
+  LibraryProvider,
+  Playlist,
+  SeriesItem,
+  XtreamAccount,
+} from "@/lib/types";
 import { randomId } from "@/lib/utils/id";
 
 export type LoadStage = "idle" | "downloading" | "parsing" | "analyzing" | "saving" | "done" | "error";
@@ -31,6 +38,11 @@ interface LibraryState {
   hydrate: () => Promise<void>;
   addFromUrl: (url: string, name?: string) => Promise<void>;
   addFromText: (text: string, name: string) => Promise<void>;
+  addFromXtream: (
+    credentials: { host: string; username: string; password: string },
+    name?: string,
+  ) => Promise<XtreamAccount>;
+  refreshXtreamAccount: (playlistId: string) => Promise<XtreamAccount>;
   refreshPlaylist: (playlistId: string) => Promise<void>;
   removePlaylist: (playlistId: string) => Promise<void>;
   loadDemo: () => Promise<void>;
@@ -146,6 +158,67 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     await ingest(text, { id: randomId("pl"), name, source: "file" });
   },
 
+  /**
+   * Xtream paneline kullanıcı adı/şifreyle bağlanır.
+   * Panel önce doğrulanır (hesap geçerli mi, hangi formatları veriyor), sonra
+   * üretilen M3U adresi normal indirme akışına girer.
+   */
+  addFromXtream: async (credentials, name) => {
+    set({ load: { stage: "downloading", message: "Panele bağlanılıyor…", parsed: 0 } });
+
+    const account = await loginXtream(credentials);
+
+    set({ load: { stage: "downloading", message: "Playlist indiriliyor…", parsed: 0 } });
+
+    let text: string;
+    try {
+      text = await downloadPlaylist(account.playlistUrl, (message) =>
+        set({ load: { stage: "downloading", message, parsed: 0 } }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Playlist indirilemedi";
+      set({ load: { stage: "error", message: "", parsed: 0, error: message } });
+      throw error;
+    }
+
+    await ingest(text, {
+      id: randomId("pl"),
+      name: name?.trim() || `${account.account.username}@${hostLabel(account.account.host)}`,
+      url: account.playlistUrl,
+      source: "xtream",
+      xtream: account.account,
+    });
+
+    return account.account;
+  },
+
+  /** Hesap durumunu (bitiş tarihi, aktif bağlantı) yeniden sorgular. */
+  refreshXtreamAccount: async (playlistId) => {
+    const playlist = get().playlists.find((item) => item.id === playlistId);
+    if (!playlist?.url || playlist.source !== "xtream") {
+      throw new Error("Bu playlist bir panel hesabına bağlı değil");
+    }
+
+    const parsed = new URL(playlist.url);
+    const account = await loginXtream({
+      host: `${parsed.protocol}//${parsed.host}`,
+      username: parsed.searchParams.get("username") ?? "",
+      password: parsed.searchParams.get("password") ?? "",
+    });
+
+    const updated: Playlist = { ...playlist, xtream: account.account };
+    try {
+      await libraryRepository.savePlaylist(updated);
+    } catch {
+      /* kalıcı depolama yoksa bellekte güncelle */
+    }
+    set({
+      playlists: get().playlists.map((item) => (item.id === playlistId ? updated : item)),
+    });
+
+    return account.account;
+  },
+
   refreshPlaylist: async (playlistId) => {
     const playlist = get().playlists.find((item) => item.id === playlistId);
     if (!playlist?.url) throw new Error("Bu playlist bir URL'den gelmediği için yenilenemez");
@@ -194,6 +267,41 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     });
   },
 }));
+
+/** Panel girişi: kimlik doğrulama + hesap bilgisi + üretilen M3U adresi. */
+async function loginXtream(credentials: {
+  host: string;
+  username: string;
+  password: string;
+}): Promise<{ playlistUrl: string; account: XtreamAccount }> {
+  const response = await fetch("/api/xtream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(credentials),
+  });
+
+  const data = (await response.json()) as {
+    playlistUrl?: string;
+    account?: XtreamAccount;
+    error?: string;
+  };
+
+  if (!response.ok || !data.playlistUrl || !data.account) {
+    const message = data.error ?? "Panele bağlanılamadı";
+    useLibraryStore.setState({ load: { stage: "error", message: "", parsed: 0, error: message } });
+    throw new Error(message);
+  }
+
+  return { playlistUrl: data.playlistUrl, account: data.account };
+}
+
+function hostLabel(host: string): string {
+  try {
+    return new URL(host).hostname;
+  } catch {
+    return host;
+  }
+}
 
 /**
  * M3U metnini indirir.

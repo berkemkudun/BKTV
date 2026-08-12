@@ -85,7 +85,12 @@ export'larını değiştirmek yeterlidir. Uygulamanın hiçbir yeri IndexedDB'yi
 
 ### API route'ları
 
+- `POST /api/xtream` — panel girişi. `player_api.php` ile kimlik doğrular ve üç kritik bilgiyi döner:
+  abonelik durumu/bitişi, `max_connections` (503'lerin baş sebebi) ve `allowed_output_formats`.
+  Panel `m3u8` veriyorsa liste adresi ona göre üretilir — ham `.ts` yayınlar tarayıcıda çok daha kırılgan.
+  Adres normalizasyonu `lib/xtream/url.ts`'te ve testli (kullanıcı tam M3U bağlantısını da yapıştırabiliyor).
 - `POST /api/playlist` — M3U'yu sunucuda indirir (VLC user-agent, 45sn timeout, `#EXTINF` doğrulaması).
+- `GET /api/probe?url=` — tanı için adresi yoklar; yalnızca başlıkları okur, gövdeyi indirmez.
 - `GET /api/proxy?url=` — stream proxy. `.m3u8` ise playlist'i indirip **içindeki tüm URL'leri yeniden yazar**
   (segmentler de proxy'den geçsin diye); değilse Range destekli byte aktarımı yapar.
   Oynatıcı, CORS kaynaklı hata alınca kullanıcıya "Proxy ile tekrar dene" seçeneği sunar.

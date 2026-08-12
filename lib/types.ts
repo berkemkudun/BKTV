@@ -104,12 +104,29 @@ export interface Episode {
   logo?: string;
 }
 
+/** Xtream paneline giriş yapıldıysa hesabın son bilinen durumu. */
+export interface XtreamAccount {
+  host: string;
+  username: string;
+  status: string;
+  isTrial: boolean;
+  /** Abonelik bitişi (ms). Panel vermezse null. */
+  expiresAt: number | null;
+  /** Aynı anda kaç yayın açılabilir — 503'lerin en yaygın sebebi */
+  maxConnections: number | null;
+  activeConnections: number | null;
+  /** Listenin hangi formatta istendiği: "m3u8" tarayıcıda çok daha kararlı */
+  outputFormat: string;
+}
+
 export interface Playlist {
   id: string;
   name: string;
   /** URL ile eklendiyse kaynak adres; dosya ile eklendiyse undefined */
   url?: string;
-  source: "url" | "file" | "demo";
+  source: "url" | "file" | "demo" | "xtream";
+  /** source === "xtream" ise panel hesabının bilgileri */
+  xtream?: XtreamAccount;
   lastUpdated: number;
   itemCount: number;
   /**
