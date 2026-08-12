@@ -1,0 +1,905 @@
+# M3U Streaming Hub – Premium Streaming Platform MVP
+
+Modern, premium görünümlü bir **M3U tabanlı streaming platform arayüzü** geliştir.
+
+Uygulamanın amacı, kullanıcının verdiği M3U playlist içerisindeki film, dizi ve canlı TV içeriklerini doğrudan liste halinde göstermek yerine, bunları analiz edip **Netflix / Prime Video / Disney+ benzeri modern bir streaming deneyimine dönüştürmektir.**
+
+> ÖNEMLİ:
+> Uygulama yayın içeriği sağlamaz. Kullanıcının kendi M3U playlistindeki stream kaynaklarını kullanır. Uygulama yalnızca bu içerikleri organize eder, görselleştirir ve oynatır.
+
+---
+
+## 1. TEKNOLOJİ
+
+Projeyi aşağıdaki teknoloji stack'i ile geliştir:
+
+* Next.js
+* React
+* TypeScript
+* Tailwind CSS
+* Modern component-based architecture
+* HLS.js veya uygun HTML5 video/HLS player
+* TMDB API entegrasyonu için ayrı servis katmanı
+* İlk aşamada localStorage kullanılabilir
+* Daha sonra Supabase'e kolayca taşınabilecek temiz bir data architecture oluştur
+
+Uygulama responsive olmalı ancak öncelik:
+
+**Desktop + Smart TV / büyük ekran deneyimi**
+
+olmalı.
+
+Arayüz 1920x1080 çözünürlükte çok iyi görünmeli.
+
+---
+
+# 2. GENEL TASARIM DİLİ
+
+Gönderilen referans görseldeki modern, koyu, premium TV arayüzünü referans al.
+
+Ancak herhangi bir platformun tasarımını birebir kopyalama.
+
+Kendi özgün tasarım sistemimizi oluştur.
+
+Tasarım özellikleri:
+
+* Dark theme
+* Premium sinematik görünüm
+* Büyük posterler
+* Büyük backdrop görselleri
+* Yumuşak gradientler
+* Hafif glassmorphism
+* Büyük typography
+* Hover animasyonları
+* Smooth transitions
+* Minimal ama kaliteli UI
+* Çok fazla küçük kart ve metinle ekranı boğma
+* TV kumandasıyla kullanılabilecek kadar sade navigasyon
+
+Renk paleti:
+
+* Ana arka plan: çok koyu lacivert/siyah
+* Secondary background: koyu mor/lacivert
+* Primary text: beyaz
+* Secondary text: gri
+* Accent: kırmızı veya mor
+* Card background: koyu transparan yüzeyler
+
+---
+
+# 3. ANA FİKİR
+
+Uygulamanın en önemli özelliği:
+
+## Ana ekranda binlerce film gösterme.
+
+Bunun yerine önce:
+
+### PLATFORMALAR
+
+göster.
+
+Örneğin:
+
+Netflix
+Prime Video
+Disney+
+Max
+Apple TV+
+Sports
+Live TV
+
+gibi platform/kategori kartları oluştur.
+
+Kullanıcı önce platformu seçsin.
+
+Örneğin:
+
+Home
+→ Netflix
+→ Netflix'in içerikleri
+
+veya:
+
+Home
+→ Prime Video
+→ Prime Video içerikleri
+
+---
+
+# 4. M3U URL EKLEME
+
+Uygulamada bir "Playlist Ekle" bölümü oluştur.
+
+Kullanıcı:
+
+* M3U URL
+* M3U dosyası
+
+ekleyebilmeli.
+
+Örneğin:
+
+https://example.com/playlist.m3u
+
+Kullanıcı playlisti eklediğinde:
+
+1. M3U indir
+2. Parse et
+3. İçerikleri analiz et
+4. Kategorileri çıkar
+5. Platformları normalize et
+6. Film / dizi / canlı TV ayrımı yap
+7. Logo bilgilerini al
+8. Stream URL'lerini sakla
+9. Mümkünse TMDB ile içerikleri eşleştir
+
+---
+
+# 5. M3U PARSER
+
+Parser sağlam ve esnek olmalı.
+
+Aşağıdaki alanları destekle:
+
+* EXTINF
+* group-title
+* tvg-name
+* tvg-logo
+* tvg-id
+* stream URL
+
+Örneğin:
+
+#EXTINF:-1 tvg-id="..." tvg-name="Inception" tvg-logo="..." group-title="Netflix | Movies"
+https://example.com/stream.m3u8
+
+gibi bir kayıt geldiğinde:
+
+Platform:
+
+Netflix
+
+Kategori:
+
+Movies
+
+İçerik:
+
+Inception
+
+Logo:
+
+tvg-logo
+
+Stream:
+
+m3u8 URL
+
+olarak ayrıştır.
+
+---
+
+# 6. PLATFORM NORMALIZATION
+
+M3U listeleri standart değildir.
+
+Aşağıdaki isimleri aynı platform olarak normalize edebil:
+
+Netflix
+NETFLIX
+Netflix Movies
+Movies | Netflix
+VOD Netflix
+Netflix UHD
+Netflix 4K
+
+→ Netflix
+
+Amazon
+Amazon Prime
+Prime Video
+Amazon Movies
+Prime VOD
+
+→ Prime Video
+
+Disney
+Disney+
+Disney Plus
+Disney Movies
+
+→ Disney+
+
+HBO
+HBO Max
+Max
+MAX Movies
+
+→ Max
+
+Apple TV
+Apple TV+
+AppleTV
+
+→ Apple TV+
+
+Bu sistem hardcoded olmak zorunda değil.
+
+Ayrı bir provider normalization configuration oluştur.
+
+Örneğin:
+
+providers.ts
+
+içerisinde yönetilebilsin.
+
+---
+
+# 7. İÇERİK TİPİ ALGILAMA
+
+M3U'daki içerikleri:
+
+* Movies
+* Series
+* Live TV
+* Sports
+* News
+* Kids
+* Other
+
+olarak sınıflandır.
+
+Eğer group-title içerisinde:
+
+Movies
+Movie
+VOD
+
+geçiyorsa film olarak değerlendir.
+
+Series
+TV Shows
+Shows
+
+geçiyorsa dizi olarak değerlendir.
+
+Live
+Live TV
+Channels
+
+geçiyorsa canlı yayın olarak değerlendir.
+
+Ancak parser mümkün olduğunca esnek tasarlanmalı.
+
+---
+
+# 8. TMDB ENTEGRASYONU
+
+M3U genellikle sadece isim, logo ve stream URL'si içerir.
+
+Bu yüzden film/dizi isimlerini TMDB ile eşleştir.
+
+Örneğin M3U:
+
+Inception
+
+veriyorsa TMDB'den:
+
+* Poster
+* Backdrop
+* Film adı
+* Orijinal isim
+* Açıklama
+* Yayın yılı
+* Rating
+* Tür
+* Oyuncular
+* Yönetmen
+* Süre
+
+gibi metadata bilgilerini al.
+
+Eşleştirme başarısız olursa M3U'daki mevcut bilgilerle devam et.
+
+TMDB API key'i environment variable üzerinden alın:
+
+TMDB_API_KEY
+
+API key'i frontend'e açık şekilde koyma.
+
+---
+
+# 9. ANA SAYFA
+
+Ana sayfa klasik IPTV kanal listesi gibi görünmemeli.
+
+İlk ekranda büyük bir hero alanı ve ardından platformlar bulunmalı.
+
+Örnek:
+
+STREAM HUB
+
+"Ne izlemek istiyorsun?"
+
+[ Filmler ] [ Diziler ] [ Canlı TV ]
+
+### Platformlar
+
+[ Netflix ]
+[ Prime Video ]
+[ Disney+ ]
+[ Max ]
+[ Apple TV+ ]
+
+### Devam Et
+
+Kullanıcının son izlediği içerikler.
+
+### Son Eklenenler
+
+Yeni eklenen içerikler.
+
+### Favoriler
+
+Favoriye alınan içerikler.
+
+---
+
+# 10. PLATFORM SAYFASI
+
+Kullanıcı Netflix'e tıkladığında:
+
+/provider/netflix
+
+sayfasına git.
+
+Bu sayfa modern streaming platformu görünümünde olsun.
+
+Örneğin:
+
+Netflix
+
+Featured
+
+Büyük hero banner.
+
+Altında:
+
+Trending
+Popular
+Action
+Comedy
+Drama
+Sci-Fi
+
+gibi yatay içerik rafları.
+
+Ancak kategoriler M3U içerisinde gerçekten varsa göster.
+
+Boş kategorileri gösterme.
+
+---
+
+# 11. FİLM DETAY SAYFASI
+
+Film kartına tıklanınca:
+
+/movie/[id]
+
+sayfası açılmalı.
+
+Örneğin:
+
+INCEPTION
+
+2010
+★★★★★ 8.8
+2h 28m
+
+[ OYNAT ]
+
+Açıklama
+
+Türler:
+Action · Sci-Fi · Thriller
+
+Oyuncular
+
+Benzer İçerikler
+
+Eğer M3U'da bu film için birden fazla stream bulunuyorsa kullanıcıya uygun kaynakları göster.
+
+---
+
+# 12. DİZİLER
+
+Diziler için:
+
+/series/[id]
+
+sayfası oluştur.
+
+Örneğin:
+
+Breaking Bad
+
+Sezon 1
+
+Episode 1
+Episode 2
+Episode 3
+
+...
+
+Sezon 2
+
+Episode 1
+Episode 2
+
+...
+
+M3U'daki isimlendirmeden sezon ve bölüm bilgilerini mümkün olduğunca otomatik algıla.
+
+Örneğin:
+
+S01E01
+S01 E01
+Season 1 Episode 1
+1x01
+
+gibi formatları destekle.
+
+---
+
+# 13. LIVE TV
+
+Live TV ayrı bir bölüm olsun.
+
+Bu bölüm referans görseldeki IPTV tasarımına daha yakın olabilir.
+
+Sol tarafta:
+
+Countries
+
+Turkey
+USA
+UK
+Germany
+France
+
+gibi gruplar.
+
+Ana bölümde kanal listesi:
+
+TRT 1
+ATV
+Show TV
+Kanal D
+
+vs.
+
+Kanal logosu varsa göster.
+
+Kanala tıklanınca sağ tarafta player açılsın.
+
+---
+
+# 14. VIDEO PLAYER
+
+HTML5/HLS tabanlı bir player oluştur.
+
+Destek:
+
+* Play/Pause
+* Volume
+* Fullscreen
+* Progress bar
+* Loading state
+* Error state
+* Auto play
+* Mute
+* Keyboard controls
+
+M3U'daki stream URL'sini kullan.
+
+HLS destekleniyorsa HLS.js kullan.
+
+Player ayrı bir reusable component olsun:
+
+components/player/VideoPlayer.tsx
+
+---
+
+# 15. FAVORİLER
+
+Kullanıcı:
+
+Film
+Dizi
+Kanal
+
+favoriye ekleyebilsin.
+
+Kalıcı olarak localStorage'da saklanabilir.
+
+Daha sonra database'e taşınabilecek şekilde abstraction oluştur.
+
+---
+
+# 16. WATCH HISTORY
+
+Son izlenen içerikleri kaydet.
+
+Örneğin:
+
+Devam Et
+
+Interstellar
+%62
+
+Breaking Bad S02E04
+%38
+
+gibi göster.
+
+Video ilerlemesini mümkün olduğunca sakla.
+
+---
+
+# 17. ARAMA
+
+Global search oluştur.
+
+Kullanıcı:
+
+Interstellar
+
+yazdığında:
+
+Movies
+Series
+Live TV
+
+sonuçlarını gösterebilsin.
+
+Arama M3U içerikleri üzerinden yapılmalı.
+
+TMDB araması da fallback olarak kullanılabilir.
+
+---
+
+# 18. AYARLAR
+
+Settings sayfası:
+
+Playlist Management
+
+[ Add Playlist ]
+
+[ Refresh Playlist ]
+
+[ Delete Playlist ]
+
+TMDB
+
+API bağlantı durumu
+
+Player
+
+Autoplay
+Remember Position
+Default Quality
+
+Appearance
+
+Dark Theme
+
+---
+
+# 19. BİRDEN FAZLA M3U
+
+Mimariyi ileride birden fazla playlist destekleyecek şekilde oluştur.
+
+Örneğin:
+
+Playlist 1
+Playlist 2
+Playlist 3
+
+gibi.
+
+İçerikler tek bir unified library içerisinde gösterilebilsin.
+
+Aynı içerik birden fazla playlistte varsa duplicate göstermemeye çalış.
+
+---
+
+# 20. VERİ MODELİ
+
+Temel olarak aşağıdaki yapıları kullan:
+
+Provider
+
+* id
+* name
+* slug
+* logo
+* aliases
+
+Content
+
+* id
+* title
+* type
+* provider
+* streamUrl
+* logo
+* poster
+* backdrop
+* description
+* year
+* rating
+* genres
+* tmdbId
+
+Episode
+
+* id
+* seriesId
+* season
+* episode
+* title
+* streamUrl
+
+Playlist
+
+* id
+* name
+* url
+* lastUpdated
+
+UserPreferences
+
+* favorites
+* watchHistory
+* selectedProviders
+
+---
+
+# 21. UI COMPONENTLERİ
+
+Reusable componentler oluştur.
+
+Özellikle:
+
+Sidebar
+Header
+HeroBanner
+ProviderCard
+MovieCard
+SeriesCard
+EpisodeCard
+ContentRow
+SearchBar
+VideoPlayer
+ProviderPage
+MovieDetail
+SeriesDetail
+LiveTVGrid
+ChannelCard
+ContinueWatching
+FavoriteButton
+LoadingSkeleton
+ErrorState
+
+---
+
+# 22. PERFORMANS
+
+M3U dosyaları çok büyük olabilir.
+
+10.000+ içerik içeren playlistleri düşün.
+
+Bu nedenle:
+
+* Parser işlemini optimize et
+* Gereksiz render yapma
+* Posterleri lazy load et
+* Büyük listelerde virtualization düşün
+* TMDB API isteklerini cache'le
+* Aynı içeriği tekrar sorgulama
+* M3U parse işlemini UI thread'ini mümkün olduğunca bloklamayacak şekilde yap
+* Arama debounce kullan
+
+---
+
+# 23. HATA DURUMLARI
+
+Uygulama şunlarda çökmemeli:
+
+* M3U URL çalışmıyor
+* M3U formatı bozuk
+* Stream çalışmıyor
+* TMDB eşleşmesi bulunamadı
+* Logo yok
+* Poster yok
+* Backdrop yok
+* API rate limit
+* Çok büyük playlist
+* HLS desteklenmeyen kaynak
+
+Her durumda kullanıcıya anlaşılır hata mesajı göster.
+
+---
+
+# 24. DEMO MODE
+
+M3U URL verilmeden uygulamayı test edebilmek için demo data oluştur.
+
+Demo modunda:
+
+Netflix
+Prime Video
+Disney+
+Max
+
+platformları ve örnek film/dizi verileri bulunmalı.
+
+Bu sayede uygulamanın UI'sı gerçek M3U olmadan da görülebilsin.
+
+Gerçek M3U eklendiğinde demo data yerine gerçek veriler kullanılabilsin.
+
+---
+
+# 25. NAVIGATION
+
+Desktop:
+
+Home
+Movies
+Series
+Live TV
+Favorites
+Search
+Settings
+
+TV ekranında ise kumanda ile kullanılabilecek basit bir navigation oluştur.
+
+---
+
+# 26. ÖNEMLİ TASARIM KURALI
+
+Uygulama kesinlikle klasik IPTV uygulaması gibi görünmemeli.
+
+Şunlardan kaçın:
+
+* Binlerce küçük kanal kartı
+* Karmaşık tablolar
+* Çok fazla metin
+* Eski tip IPTV listeleri
+* Ucuz görünümlü gradientler
+* Gereksiz butonlar
+
+Amaç:
+
+**"Netflix benzeri modern streaming platformu hissi veren, fakat kullanıcının kendi M3U kaynaklarını organize eden bir uygulama."**
+
+olması.
+
+---
+
+# 27. GELİŞTİRME SIRASI
+
+Projeyi tek seferde her şeyi yapmaya çalışma.
+
+Önce şu sırayla çalışan MVP oluştur:
+
+### Aşama 1
+
+* Next.js proje
+* Dark UI
+* Sidebar
+* Home
+* Demo provider cards
+* Movie cards
+* Detail page
+
+### Aşama 2
+
+* M3U URL input
+* M3U parser
+* Provider detection
+* Movie / Series / Live TV detection
+
+### Aşama 3
+
+* TMDB integration
+* Poster matching
+* Backdrop matching
+* Metadata
+
+### Aşama 4
+
+* HLS player
+* Real stream playback
+
+### Aşama 5
+
+* Favorites
+* Watch history
+* Continue watching
+
+### Aşama 6
+
+* Multiple playlists
+* Search
+* Settings
+* Error handling
+* Performance optimization
+
+---
+
+# 28. İLK ÇALIŞAN VERSİYONUN HEDEFİ
+
+İlk çalışan prototipte şu akış kesinlikle çalışmalı:
+
+M3U URL gir
+
+↓
+
+Playlist yükleniyor
+
+↓
+
+M3U parse ediliyor
+
+↓
+
+Platformlar otomatik oluşturuluyor
+
+↓
+
+Netflix'e tıkla
+
+↓
+
+Netflix içerikleri göster
+
+↓
+
+Bir film seç
+
+↓
+
+TMDB metadata göster
+
+↓
+
+Oynat butonuna bas
+
+↓
+
+M3U'daki stream URL'si Video Player'da oynat
+
+Bu akış çalışmadan sonraki özelliklere geçme.
+
+---
+
+# SON TALİMAT
+
+Önce çalışan bir MVP oluştur.
+
+Eksik özellikleri sahte butonlarla tamamlanmış gibi gösterme.
+
+Çalışmayan özellik varsa açıkça belirt.
+
+Kod yapısını modüler oluştur.
+
+Daha sonra Supabase, authentication, mobile app ve Android TV desteği eklenebilecek şekilde mimariyi temiz tut.
+
+Öncelik:
+
+**Çalışan M3U → Provider → Content → TMDB → Player akışı.**
+
+UI kalitesi yüksek, modern, premium ve TV kullanımına uygun olsun.
