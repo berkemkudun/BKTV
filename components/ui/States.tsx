@@ -46,6 +46,34 @@ export function ErrorState({
   );
 }
 
+/**
+ * Filtre sonucu boş kalınca gösterilir.
+ * Boş ızgara yerine ne olduğunu söyleyip filtreyi temizleme yolu sunar —
+ * "liste filtrelemede sıkıntı var" şikayetinin yarısı buydu.
+ */
+export function NoResults({
+  message = "Bu filtreye uyan içerik yok.",
+  onClear,
+}: {
+  message?: string;
+  onClear?: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
+      <p className="text-[14.5px] text-fg-muted">{message}</p>
+      {onClear && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="rounded-xl border border-white/12 bg-white/5 px-4 py-2.5 text-[13.5px] font-semibold transition-colors hover:bg-white/10"
+        >
+          Filtreleri temizle
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function EmptyState({
   title,
   message,

@@ -15,6 +15,12 @@ export interface ChannelCategory {
   /** Kart/rozet rengi */
   color: string;
   keywords: string[];
+  /**
+   * Jenerik kova ("General", "Undefined", "Yaşam"…). Grup adı buraya uysa bile
+   * önce kanal adının özel bir kategoriye (spor, haber, ulusal…) uyup uymadığına
+   * bakılır; aksi halde "General" grubundaki TRT 1 de eğlenceye düşerdi.
+   */
+  generic?: boolean;
 }
 
 export const CHANNEL_CATEGORIES: ChannelCategory[] = [
@@ -94,8 +100,26 @@ export const CHANNEL_CATEGORIES: ChannelCategory[] = [
     color: "#2563EB",
     keywords: [
       "ulusal", "national", "trt 1", "trt1", "atv", "show tv", "kanal d", "star tv", "tv8",
-      "now tv", "fox tv", "kanal 7", "beyaz tv", "tv 360", "teve2", "dmax", "tr genel",
-      "turkiye", "turkey", "yerel", "genel",
+      "now tv", "fox tv", "kanal 7", "beyaz tv", "tv 360", "teve2", "tr genel",
+      "turkiye", "turkey", "turkish", "yerel", "tv2", "tv 2", "360 tv",
+      "flash tv", "ulke tv", "tv5", "meltem", "kanal b",
+    ],
+  },
+  {
+    /*
+     * Gerçek listelerde kanalların büyük kısmı "General / Entertainment /
+     * Undefined / Yaşam" gibi jenerik gruplarda gelir; bunlar kategorisiz
+     * kalınca Canlı TV'de her şey "Diğer" kovasında toplanıyordu.
+     */
+    id: "entertainment",
+    label: "Genel & Eğlence",
+    color: "#F97316",
+    generic: true,
+    keywords: [
+      "eglence", "entertainment", "yasam", "lifestyle", "magazin", "reality", "yemek", "food",
+      "moda", "fashion", "seyahat", "travel", "kultur", "culture", "egitim", "education",
+      "bilgi", "knowledge", "ekonomi", "business", "finans", "finance", "undefined",
+      "tanimsiz", "diger", "other", "misc", "various", "genel", "general", "series",
     ],
   },
 ];
@@ -116,14 +140,18 @@ export function categorizeChannel(channel: ContentItem): ChannelCategory {
   const group = normalizeForMatch(channel.group ?? "");
   const name = normalizeForMatch(channel.title ?? "");
 
-  for (const category of CHANNEL_CATEGORIES) {
-    if (category.keywords.some((keyword) => containsWord(group, keyword))) return category;
-  }
-  for (const category of CHANNEL_CATEGORIES) {
-    if (category.keywords.some((keyword) => containsWord(name, keyword))) return category;
-  }
+  const specific = CHANNEL_CATEGORIES.filter((category) => !category.generic);
+  const generic = CHANNEL_CATEGORIES.filter((category) => category.generic);
 
-  return OTHER_CATEGORY;
+  const match = (haystack: string, list: ChannelCategory[]) =>
+    list.find((category) => category.keywords.some((keyword) => containsWord(haystack, keyword)));
+
+  // 1) Grup adı özel bir kategoriye uyuyor mu? ("TR | SPOR")
+  // 2) Kanal adı? ("beIN Sports 1" — grubu "General" olsa bile)
+  // 3) Grup jenerik bir kovaya uyuyor mu? ("General", "Undefined")
+  return (
+    match(group, specific) ?? match(name, specific) ?? match(group, generic) ?? OTHER_CATEGORY
+  );
 }
 
 export interface CategorizedChannels {

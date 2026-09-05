@@ -5,7 +5,7 @@ import { Suspense, useMemo, useState } from "react";
 
 import { ContentCard } from "@/components/content/ContentCard";
 import { FilterBar } from "@/components/content/FilterBar";
-import { EmptyState, LoadingSkeleton } from "@/components/ui/States";
+import { EmptyState, LoadingSkeleton, NoResults } from "@/components/ui/States";
 import { useMovies } from "@/lib/hooks/useLibrarySelectors";
 import { usePagedList } from "@/lib/hooks/usePagedList";
 import { useLibraryStore } from "@/lib/store/libraryStore";
@@ -58,12 +58,24 @@ function MoviesBrowser() {
       if (!key) continue;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    return [...counts.entries()]
+    const options = [...counts.entries()]
       .filter(([, count]) => count >= 3)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 14)
       .map(([label, count]) => ({ value: label, label, count }));
-  }, [filteredByProvider]);
+
+    /*
+     * Seçili kategori eşiği geçemiyorsa ya da ilk 14'e giremiyorsa yine
+     * gösterilir: aksi halde ana sayfadan bir türe tıklayan kullanıcı, filtre
+     * çubuğunda "Tüm Türler" seçili görünürken filtrelenmiş (hatta boş) bir
+     * liste görüyordu.
+     */
+    if (category && !options.some((option) => option.value === category)) {
+      options.unshift({ value: category, label: category, count: counts.get(category) ?? 0 });
+    }
+
+    return options;
+  }, [filteredByProvider, category]);
 
   const filtered = useMemo(
     () => (category ? filteredByProvider.filter((item) => item.category === category) : filteredByProvider),
@@ -120,6 +132,16 @@ function MoviesBrowser() {
           />
         ))}
       </div>
+
+      {filtered.length === 0 && (
+        <NoResults
+          message="Bu filtreye uyan film yok."
+          onClear={() => {
+            setProvider("");
+            setCategory("");
+          }}
+        />
+      )}
 
       {hasMore && (
         <div ref={sentinelRef} className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 sm:gap-5 px-4 sm:px-5 pt-7 lg:px-8">

@@ -278,7 +278,32 @@ const COUNTRY_HINTS: { code: string; label: string; keywords: string[] }[] = [
   { code: "IT", label: "İtalya", keywords: ["it", "italy", "italia"] },
 ];
 
-export function detectCountry(group: string, name: string): string | undefined {
+/**
+ * Kanalın ülkesi.
+ *
+ * Sıra güvenilirlikten tahmine doğru:
+ *  1. `tvg-country` attribute'u (varsa kesin bilgi)
+ *  2. `tvg-id` soneki — "TRT1.tr", "4UTV.tr@SD" biçimi iptv-org'da ve birçok
+ *     panelde standarttır; grup adı "General" olsa bile ülkeyi verir
+ *  3. `tvg-language` ("Turkish")
+ *  4. Grup/kanal adındaki metin ipuçları ("TR | ULUSAL", "TÜRKİYE")
+ */
+export function detectCountry(
+  group: string,
+  name: string,
+  attributes?: Record<string, string>,
+): string | undefined {
+  const explicit = normalizeCode(attributes?.["tvg-country"]);
+  if (explicit) return explicit;
+
+  const tvgId = attributes?.["tvg-id"];
+  const idMatch = tvgId?.match(/\.([a-z]{2})(?:@|$)/i);
+  const fromId = normalizeCode(idMatch?.[1]);
+  if (fromId) return fromId;
+
+  const language = normalizeForMatch(attributes?.["tvg-language"] ?? "");
+  if (language.includes("turkish") || language.includes("turkce")) return "TR";
+
   const haystack = normalizeForMatch(`${group} ${name}`);
   for (const { code, keywords } of COUNTRY_HINTS) {
     for (const keyword of keywords) {
@@ -286,6 +311,13 @@ export function detectCountry(group: string, name: string): string | undefined {
     }
   }
   return undefined;
+}
+
+/** "tr" → "TR", "gb" → "UK" (listemizdeki kodla aynı olsun diye). */
+function normalizeCode(value: string | undefined): string | undefined {
+  const code = value?.trim().toUpperCase();
+  if (!code || !/^[A-Z]{2}$/.test(code)) return undefined;
+  return code === "GB" ? "UK" : code;
 }
 
 export function countryLabel(code: string): string {

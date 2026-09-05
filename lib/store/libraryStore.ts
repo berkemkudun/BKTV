@@ -129,9 +129,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   addFromUrl: async (url, name) => {
     set({ load: { stage: "downloading", message: "Playlist indiriliyor…", parsed: 0 } });
 
-    let text: string;
+    let downloaded: { text: string; url: string };
     try {
-      text = await downloadPlaylist(url, (message) =>
+      downloaded = await downloadPlaylist(url, (message) =>
         set({ load: { stage: "downloading", message, parsed: 0 } }),
       );
     } catch (error) {
@@ -146,10 +146,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       throw error;
     }
 
-    await ingest(text, {
+    await ingest(downloaded.text, {
       id: randomId("pl"),
       name: name?.trim() || guessName(url),
-      url,
+      url: downloaded.url,
       source: "url",
     });
   },
@@ -170,9 +170,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
     set({ load: { stage: "downloading", message: "Playlist indiriliyor…", parsed: 0 } });
 
-    let text: string;
+    let downloaded: { text: string; url: string };
     try {
-      text = await downloadPlaylist(account.playlistUrl, (message) =>
+      downloaded = await downloadPlaylist(account.playlistUrl, (message) =>
         set({ load: { stage: "downloading", message, parsed: 0 } }),
       );
     } catch (error) {
@@ -181,10 +181,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       throw error;
     }
 
-    await ingest(text, {
+    await ingest(downloaded.text, {
       id: randomId("pl"),
       name: name?.trim() || `${account.account.username}@${hostLabel(account.account.host)}`,
-      url: account.playlistUrl,
+      url: downloaded.url,
       source: "xtream",
       xtream: account.account,
     });
@@ -225,9 +225,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
     set({ load: { stage: "downloading", message: "Playlist yenileniyor…", parsed: 0 } });
 
-    let text: string;
+    let downloaded: { text: string; url: string };
     try {
-      text = await downloadPlaylist(playlist.url, (message) =>
+      downloaded = await downloadPlaylist(playlist.url, (message) =>
         set({ load: { stage: "downloading", message, parsed: 0 } }),
       );
     } catch (error) {
@@ -236,7 +236,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       throw new Error(message);
     }
 
-    await ingest(text, playlist);
+    await ingest(downloaded.text, { ...playlist, url: downloaded.url });
   },
 
   removePlaylist: async (playlistId) => {
@@ -311,35 +311,54 @@ function hostLabel(host: string): string {
  * 403) aynı adres tarayıcıdan, yani kullanıcının kendi IP'sinden denenir.
  * O da CORS'a takılırsa kullanıcıya dosya yükleme yolu gösterilir.
  */
-async function downloadPlaylist(url: string, onStatus: (message: string) => void): Promise<string> {
+async function downloadPlaylist(
+  url: string,
+  onStatus: (message: string) => void,
+): Promise<{ text: string; url: string }> {
   const response = await fetch("/api/playlist", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
   });
 
-  const data = (await response.json()) as { text?: string; error?: string; reason?: string };
-  if (response.ok && data.text) return data.text;
+  const data = (await response.json()) as {
+    text?: string;
+    url?: string;
+    error?: string;
+    reason?: string;
+  };
+  // Sunucu çalışan adres varyantını döner (ör. output=ts); yenilemede o kullanılmalı.
+  if (response.ok && data.text) return { text: data.text, url: data.url ?? url };
 
   if (data.reason !== "blocked") {
     throw new Error(data.error ?? "Playlist indirilemedi");
   }
 
-  onStatus("Sunucu engellendi, tarayıcıdan deneniyor…");
+  // Sayfa https, liste http ise tarayıcı bu isteği zaten engeller (mixed content).
+  const mixedContent =
+    typeof window !== "undefined" &&
+    window.location.protocol === "https:" &&
+    url.toLowerCase().startsWith("http://");
 
-  try {
-    const direct = await fetch(url, { redirect: "follow" });
-    if (direct.ok) {
-      const text = await direct.text();
-      if (text.includes("#EXTINF")) return text;
+  if (!mixedContent) {
+    onStatus("Sunucu engellendi, tarayıcıdan deneniyor…");
+    try {
+      const direct = await fetch(url, { redirect: "follow" });
+      if (direct.ok) {
+        const text = await direct.text();
+        if (text.includes("#EXTINF")) return { text, url };
+      }
+    } catch {
+      /* CORS ya da ağ hatası — aşağıdaki yönlendirici mesaja düş */
     }
-  } catch {
-    /* CORS ya da ağ hatası — aşağıdaki yönlendirici mesaja düş */
   }
 
   throw new Error(
-    "Sağlayıcı hem sunucunun hem tarayıcının isteğini reddetti. Listeyi bilgisayarına indirip " +
-      "“Dosya Yükle” sekmesinden ekleyebilirsin — bu yöntem her zaman çalışır.",
+    (mixedContent
+      ? "Sağlayıcı sunucunun isteğini reddetti. Liste adresi http, bu sayfa https olduğu için " +
+        "tarayıcıdan doğrudan da indirilemiyor. "
+      : "Sağlayıcı hem sunucunun hem tarayıcının isteğini reddetti. ") +
+      "Listeyi cihazına indirip “Dosya Yükle” sekmesinden ekleyebilirsin — bu yöntem her zaman çalışır.",
   );
 }
 

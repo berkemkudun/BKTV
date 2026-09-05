@@ -40,46 +40,85 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const apiUrl = new URL(`${base}/player_api.php`);
-  apiUrl.searchParams.set("username", username);
-  apiUrl.searchParams.set("password", password);
+  /*
+   * Paneller aynı API'yi farklı adreslerde sunuyor: çoğu `player_api.php`,
+   * bir kısmı `panel_api.php`. Ayrıca kullanıcı şema yazmadıysa adres http
+   * kabul ediliyor; https-only panellerde bu bağlantı hiç kurulamıyor.
+   * Hepsi sırayla denenir — ilk geçerli JSON kazanır.
+   */
+  const bases = base.startsWith("http://") ? [base, base.replace(/^http:/, "https:")] : [base];
+  const endpoints = ["player_api.php", "panel_api.php"];
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
+  let data: XtreamApiResponse | null = null;
+  /** Hangi adres cevap verdiyse liste adresi de ondan üretilmeli (http/https farkı). */
+  let workingBase = base;
+  let lastStatus = 0;
+  let notJson = false;
+  let timedOut = false;
+  let unreachable = false;
 
-  let data: XtreamApiResponse;
-  try {
-    const response = await fetch(apiUrl, {
-      signal: controller.signal,
-      headers: { "User-Agent": "VLC/3.0.20 LibVLC/3.0.20", Accept: "application/json,*/*" },
-      cache: "no-store",
-      redirect: "follow",
-    });
+  const deadline = Date.now() + 25_000;
 
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `Panel yanıt vermedi (HTTP ${response.status}). Sunucu adresini kontrol et.` },
-        { status: 502 },
-      );
+  outer: for (const candidateBase of bases) {
+    for (const endpoint of endpoints) {
+      const remaining = deadline - Date.now();
+      if (remaining < 3_000) break outer;
+
+      const apiUrl = new URL(`${candidateBase}/${endpoint}`);
+      apiUrl.searchParams.set("username", username);
+      apiUrl.searchParams.set("password", password);
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), Math.min(remaining, 15_000));
+
+      try {
+        const response = await fetch(apiUrl, {
+          signal: controller.signal,
+          headers: { "User-Agent": "VLC/3.0.20 LibVLC/3.0.20", Accept: "application/json,*/*" },
+          cache: "no-store",
+          redirect: "follow",
+        });
+
+        lastStatus = response.status;
+        if (!response.ok) continue;
+
+        const text = await response.text();
+        try {
+          data = JSON.parse(text) as XtreamApiResponse;
+          workingBase = candidateBase;
+          break outer;
+        } catch {
+          notJson = true;
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") timedOut = true;
+        else unreachable = true;
+      } finally {
+        clearTimeout(timeout);
+      }
     }
+  }
 
-    const text = await response.text();
-    try {
-      data = JSON.parse(text) as XtreamApiResponse;
-    } catch {
+  if (!data) {
+    if (notJson) {
       return NextResponse.json(
         { error: "Bu adres bir Xtream paneli gibi görünmüyor (player_api.php JSON döndürmedi)." },
         { status: 422 },
       );
     }
-  } catch (error) {
-    const aborted = error instanceof Error && error.name === "AbortError";
+    if (timedOut) {
+      return NextResponse.json({ error: "Panel zamanında yanıt vermedi" }, { status: 504 });
+    }
+    if (lastStatus) {
+      return NextResponse.json(
+        { error: `Panel yanıt vermedi (HTTP ${lastStatus}). Sunucu adresini ve portu kontrol et.` },
+        { status: 502 },
+      );
+    }
     return NextResponse.json(
-      { error: aborted ? "Panel 20 saniyede yanıt vermedi" : "Sunucuya ulaşılamadı" },
-      { status: 504 },
+      { error: unreachable ? "Sunucuya ulaşılamadı" : "Panel girişi başarısız" },
+      { status: 502 },
     );
-  } finally {
-    clearTimeout(timeout);
   }
 
   const info = data.user_info;
@@ -102,12 +141,12 @@ export async function POST(request: NextRequest) {
   const formats = (info.allowed_output_formats ?? []).map((format) => format.toLowerCase());
   const output = formats.includes("m3u8") ? "m3u8" : "ts";
 
-  const playlistUrl = buildPlaylistUrl(base, username, password, output);
+  const playlistUrl = buildPlaylistUrl(workingBase, username, password, output);
 
   return NextResponse.json({
     playlistUrl,
     account: {
-      host: base,
+      host: workingBase,
       username,
       status: info.status ?? "Active",
       isTrial: info.is_trial === "1",

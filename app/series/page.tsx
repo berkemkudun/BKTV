@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import { ContentCard } from "@/components/content/ContentCard";
 import { FilterBar } from "@/components/content/FilterBar";
-import { EmptyState, LoadingSkeleton } from "@/components/ui/States";
+import { EmptyState, LoadingSkeleton, NoResults } from "@/components/ui/States";
 import { useSeries } from "@/lib/hooks/useLibrarySelectors";
 import { usePagedList } from "@/lib/hooks/usePagedList";
 import { useLibraryStore } from "@/lib/store/libraryStore";
@@ -76,6 +76,10 @@ export default function SeriesPage() {
           />
         ))}
       </div>
+
+      {filtered.length === 0 && (
+        <NoResults message="Bu platformda dizi yok." onClear={() => setProvider("")} />
+      )}
 
       {hasMore && (
         <div ref={sentinelRef} className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 sm:gap-5 px-4 sm:px-5 pt-7 lg:px-8">

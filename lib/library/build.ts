@@ -23,7 +23,7 @@ import { hash } from "@/lib/utils/id";
  * Provider/tip/dizi tespiti değiştiğinde artırın: kayıtlı playlistler "yenile"
  * uyarısı gösterir, çünkü kütüphane parse anındaki kurallarla derlenmiştir.
  */
-export const PARSER_VERSION = 2;
+export const PARSER_VERSION = 3;
 
 /**
  * Ham M3U kayıtlarını uygulamanın kullandığı kütüphaneye dönüştürür.
@@ -147,7 +147,10 @@ export function buildLibraryFromEntries(entries: RawEntry[], playlistId: string)
       streamUrl: entry.url,
       logo,
       tvgId,
-      country: type === "live" || type === "news" || type === "sports" ? detectCountry(group, rawName) : undefined,
+      country:
+        type === "live" || type === "news" || type === "sports" || type === "kids"
+          ? detectCountry(group, rawName, entry.attributes)
+          : undefined,
       playlistId,
     });
   }

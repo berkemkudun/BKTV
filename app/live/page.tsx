@@ -12,6 +12,7 @@ import { EmptyState, LoadingSkeleton } from "@/components/ui/States";
 import { useChannels } from "@/lib/hooks/useLibrarySelectors";
 import { usePagedList } from "@/lib/hooks/usePagedList";
 import { groupChannelsByCategory } from "@/lib/library/channelCategories";
+import { isTurkishItem, isTurkishText } from "@/lib/library/turkish";
 import { countryLabel } from "@/lib/m3u/classify";
 import { useLibraryStore } from "@/lib/store/libraryStore";
 import { useUiStore } from "@/lib/store/uiStore";
@@ -29,8 +30,26 @@ export default function LiveTvPage() {
 function LiveTvBrowser() {
   const hydrated = useLibraryStore((state) => state.hydrated);
   const openPlaylistDialog = useUiStore((state) => state.openPlaylistDialog);
-  const channels = useChannels();
+  const allChannels = useChannels();
   const playerSettings = useUserStore((state) => state.player);
+
+  /**
+   * Türkçe filtresi.
+   *
+   * Gerçek listelerde 10.000 kanalın büyük kısmı yabancı; kullanıcı Türkçe
+   * kanalları arıyor. Liste yeterince Türkçe kanal içeriyorsa filtre açık
+   * başlar, tek dokunuşla kapatılabilir (durum çipte açıkça görünür).
+   */
+  const turkishChannels = useMemo(() => allChannels.filter(isTurkishItem), [allChannels]);
+  const [onlyTurkish, setOnlyTurkish] = useState(false);
+
+  const [trackedTotal, setTrackedTotal] = useState(-1);
+  if (trackedTotal !== allChannels.length) {
+    setTrackedTotal(allChannels.length);
+    setOnlyTurkish(turkishChannels.length >= 20 && turkishChannels.length < allChannels.length);
+  }
+
+  const channels = onlyTurkish ? turkishChannels : allChannels;
 
   // Ana sayfadaki "Spor / Ulusal / Haber…" kutucukları /live?category=sports'a gider.
   const searchParams = useSearchParams();
@@ -67,8 +86,13 @@ function LiveTvBrowser() {
     }
     return [...counts.entries()]
       .map(([value, entry]) => ({ value, ...entry }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 30);
+      .sort((a, b) => {
+        // Türkçe gruplar önce, sonra kanal sayısına göre.
+        const turkishDiff = Number(isTurkishText(b.label)) - Number(isTurkishText(a.label));
+        if (turkishDiff !== 0) return turkishDiff;
+        return b.count - a.count;
+      })
+      .slice(0, 60);
   }, [inCategory]);
 
   const filtered = useMemo(() => {
@@ -118,6 +142,28 @@ function LiveTvBrowser() {
     <div className="px-4 pt-4 sm:px-5 sm:pt-5 lg:px-8">
       {/* Kategori sekmeleri: Spor / Ulusal / Haber / Çocuk … */}
       <div className="no-scrollbar -mx-4 mb-4 flex gap-2 overflow-x-auto px-4 sm:-mx-5 sm:mb-5 sm:px-5 lg:-mx-8 lg:px-8">
+        {turkishChannels.length > 0 && turkishChannels.length < allChannels.length && (
+          <button
+            type="button"
+            onClick={() => {
+              setOnlyTurkish((value) => !value);
+              setCategory("");
+              setSubGroup("");
+            }}
+            aria-pressed={onlyTurkish}
+            className={`flex shrink-0 items-center gap-2 rounded-xl border px-4 py-2.5 text-[13.5px] font-semibold transition-colors ${
+              onlyTurkish
+                ? "border-accent bg-accent/15 text-fg"
+                : "border-white/8 bg-white/[0.03] text-fg-muted hover:text-fg"
+            }`}
+          >
+            <span aria-hidden>🇹🇷</span> Sadece Türkçe
+            <span className={onlyTurkish ? "text-accent" : "text-fg-dim"}>
+              {turkishChannels.length.toLocaleString("tr-TR")}
+            </span>
+          </button>
+        )}
+
         <CategoryChip
           label="Tümü"
           count={channels.length}
@@ -186,6 +232,18 @@ function LiveTvBrowser() {
             <>
               <p className="mb-3 text-[12.5px] text-fg-dim">
                 {filtered.length.toLocaleString("tr-TR")} kanal
+                {onlyTurkish && (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      onClick={() => setOnlyTurkish(false)}
+                      className="font-semibold text-accent underline-offset-2 hover:underline"
+                    >
+                      Türkçe filtresi açık ({(allChannels.length - turkishChannels.length).toLocaleString("tr-TR")} kanal gizli)
+                    </button>
+                  </>
+                )}
               </p>
               <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-3 2xl:grid-cols-4">
                 {visible.map((channel) => (

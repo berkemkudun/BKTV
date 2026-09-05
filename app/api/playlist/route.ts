@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { playlistUrlVariants } from "@/lib/xtream/url";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 // Büyük listeler yavaş sunuculardan gelebiliyor; Vercel'in varsayılan 10sn'lik
@@ -52,59 +54,79 @@ export async function POST(request: NextRequest) {
     return fail("Sadece http/https adresleri desteklenir", "invalid", 400);
   }
 
+  /**
+   * Aynı hesabın farklı adres varyantları sırayla denenir: paneller
+   * `output=m3u8`e 404, `output=ts`ye 200 dönebiliyor (ve tersi).
+   * Bu, "liste eklenmiyor / 404 dönüyor" şikayetlerinin en yaygın sebebi.
+   */
+  const candidates = playlistUrlVariants(target.toString());
+
+  // Vercel fonksiyon süresi 60sn; toplam bütçeyi aşmadan birkaç varyant deneriz.
+  const deadline = Date.now() + 50_000;
+
   let lastStatus = 0;
+  let notFound = false;
+  let invalidBody = false;
   let timedOut = false;
   let networkError = false;
+  let blocked = false;
 
-  for (const userAgent of USER_AGENTS) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45_000);
+  for (const candidate of candidates) {
+    if (Date.now() > deadline - 4_000) break;
 
-    try {
-      const response = await fetch(target, {
-        signal: controller.signal,
-        redirect: "follow",
-        headers: { "User-Agent": userAgent, Accept: "*/*" },
-        cache: "no-store",
-      });
+    for (const userAgent of USER_AGENTS) {
+      const remaining = deadline - Date.now();
+      if (remaining < 4_000) break;
 
-      lastStatus = response.status;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), Math.min(remaining, 30_000));
 
-      // 403/401 → user-agent yüzünden olabilir, sıradakini dene.
-      if (response.status === 403 || response.status === 401) continue;
+      try {
+        const response = await fetch(candidate, {
+          signal: controller.signal,
+          redirect: "follow",
+          headers: { "User-Agent": userAgent, Accept: "*/*" },
+          cache: "no-store",
+        });
 
-      if (!response.ok) {
-        return fail(
-          `Playlist indirilemedi (HTTP ${response.status})`,
-          response.status === 404 ? "notfound" : "unreachable",
-          502,
-        );
+        lastStatus = response.status;
+
+        // 403/401 → user-agent yüzünden olabilir, sıradakini dene.
+        if (response.status === 403 || response.status === 401) {
+          blocked = true;
+          continue;
+        }
+
+        if (!response.ok) {
+          if (response.status === 404) notFound = true;
+          break; // bu adres için user-agent değiştirmek anlamsız — sıradaki varyanta geç
+        }
+
+        const text = await response.text();
+
+        if (!text.trim()) {
+          invalidBody = true;
+          break;
+        }
+
+        if (!text.includes("#EXTINF") && !text.trimStart().startsWith("#EXTM3U")) {
+          invalidBody = true;
+          break;
+        }
+
+        return NextResponse.json({ text, bytes: text.length, url: candidate });
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") timedOut = true;
+        else networkError = true;
+      } finally {
+        clearTimeout(timeout);
       }
-
-      const text = await response.text();
-
-      if (!text.trim()) return fail("Playlist boş döndü", "empty", 422);
-
-      if (!text.includes("#EXTINF") && !text.trimStart().startsWith("#EXTM3U")) {
-        return fail(
-          "Bu adres M3U listesi gibi görünmüyor (#EXTINF bulunamadı). Sağlayıcı hesabın süresi dolmuş olabilir.",
-          "invalid",
-          422,
-        );
-      }
-
-      return NextResponse.json({ text, bytes: text.length });
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") timedOut = true;
-      else networkError = true;
-    } finally {
-      clearTimeout(timeout);
     }
   }
 
-  if (timedOut) return fail("Playlist zaman aşımına uğradı (45sn)", "timeout", 504);
+  const tried = candidates.length > 1 ? ` (${candidates.length} adres varyantı denendi)` : "";
 
-  if (lastStatus === 403 || lastStatus === 401) {
+  if (blocked && (lastStatus === 403 || lastStatus === 401)) {
     return fail(
       `Sağlayıcı isteği reddetti (HTTP ${lastStatus}). IPTV panelleri genelde veri merkezi IP'lerini ` +
         "engeller — uygulama bir sunucuda (ör. Vercel) çalışıyorsa liste oradan indirilemez.",
@@ -113,8 +135,29 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (notFound) {
+    return fail(
+      `Sağlayıcı bu adres için 404 döndü${tried}. Genelde şu üçünden biridir: abonelik süresi dolmuş, ` +
+        "kullanıcı adı/şifre değişmiş ya da liste adresi artık geçerli değil. Panel bilgilerinle " +
+        "“Panel Girişi” sekmesinden bağlanmayı dene — doğru liste adresi otomatik üretilir.",
+      "notfound",
+      502,
+    );
+  }
+
+  if (invalidBody) {
+    return fail(
+      `Adres yanıt veriyor ama M3U listesi döndürmüyor${tried} (#EXTINF bulunamadı). ` +
+        "Sağlayıcı hesabın süresi dolmuş ya da adres bir liste adresi değil olabilir.",
+      "invalid",
+      422,
+    );
+  }
+
+  if (timedOut) return fail("Playlist zaman aşımına uğradı", "timeout", 504);
+
   return fail(
-    networkError ? "Playlist adresine ulaşılamadı" : "Playlist indirilemedi",
+    networkError ? "Playlist adresine ulaşılamadı" : `Playlist indirilemedi${tried}`,
     "unreachable",
     502,
   );

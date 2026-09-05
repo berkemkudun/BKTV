@@ -166,16 +166,21 @@ export function detectProvider(...candidates: (string | undefined)[]): Provider 
 
 /** "VOD | NETFLIX 4K" -> "vod netflix 4k" */
 export function normalizeForMatch(value: string): string {
-  return value
-    .toLocaleLowerCase("en-US")
-    .replace(/[ğ]/g, "g")
-    .replace(/[ü]/g, "u")
-    .replace(/[şs]/g, "s")
-    .replace(/[ıi]/g, "i")
-    .replace(/[ö]/g, "o")
-    .replace(/[ç]/g, "c")
-    .replace(/[^a-z0-9+]+/g, " ")
-    .trim();
+  return (
+    value
+      /*
+       * Önce aksanlar ayrıştırılıp atılır. Bu olmadan Türkçe "İ" harfi en-US
+       * küçültmesinde "i + birleşen nokta"ya dönüşüyor, nokta da aşağıdaki
+       * temizlikte BOŞLUĞA çevriliyordu: "TÜRKİYE" -> "turki ye". Sonuçta ülke
+       * tespiti ve kategori anahtarları bu grupları hiç yakalayamıyordu.
+       */
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("en-US")
+      .replace(/\u0131/g, "i")
+      .replace(/[^a-z0-9+]+/g, " ")
+      .trim()
+  );
 }
 
 /** Kelime sınırına saygılı arama: "max" -> "maxi" ile eşleşmez. */

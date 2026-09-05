@@ -2,16 +2,26 @@
 
 import { useMemo } from "react";
 
+import { isTurkishItem, isTurkishSeries, turkishFirst } from "@/lib/library/turkish";
 import { useLibraryStore } from "@/lib/store/libraryStore";
 import type { ContentItem, ContentType, SeriesItem } from "@/lib/types";
+
+/*
+ * Listeler Türkçe içerik önce gelecek şekilde sıralanır: gerçek listelerde
+ * onlarca ülkenin kanalı bir arada geliyor ve kullanıcı pratikte Türkçe
+ * olanları arıyor. Sıralama kararlı — aynı dildekiler listedeki sırasını korur.
+ */
 
 /** Filmler (dizi bölümleri hariç). */
 export function useMovies(providerSlug?: string): ContentItem[] {
   const items = useLibraryStore((state) => state.items);
   return useMemo(
     () =>
-      items.filter(
-        (item) => item.type === "movie" && (!providerSlug || item.providerSlug === providerSlug),
+      turkishFirst(
+        items.filter(
+          (item) => item.type === "movie" && (!providerSlug || item.providerSlug === providerSlug),
+        ),
+        isTurkishItem,
       ),
     [items, providerSlug],
   );
@@ -20,7 +30,11 @@ export function useMovies(providerSlug?: string): ContentItem[] {
 export function useSeries(providerSlug?: string): SeriesItem[] {
   const series = useLibraryStore((state) => state.series);
   return useMemo(
-    () => series.filter((item) => !providerSlug || item.providerSlug === providerSlug),
+    () =>
+      turkishFirst(
+        series.filter((item) => !providerSlug || item.providerSlug === providerSlug),
+        isTurkishSeries,
+      ),
     [series, providerSlug],
   );
 }
@@ -30,10 +44,16 @@ export function useChannels(providerSlug?: string): ContentItem[] {
   const items = useLibraryStore((state) => state.items);
   return useMemo(
     () =>
-      items.filter(
-        (item) =>
-          (item.type === "live" || item.type === "sports" || item.type === "news" || item.type === "kids") &&
-          (!providerSlug || item.providerSlug === providerSlug),
+      turkishFirst(
+        items.filter(
+          (item) =>
+            (item.type === "live" ||
+              item.type === "sports" ||
+              item.type === "news" ||
+              item.type === "kids") &&
+            (!providerSlug || item.providerSlug === providerSlug),
+        ),
+        isTurkishItem,
       ),
     [items, providerSlug],
   );
@@ -83,22 +103,34 @@ export function searchLibrary(
   const channels: ContentItem[] = [];
   const matchedSeries: SeriesItem[] = [];
 
+  /*
+   * Önce geniş bir havuz toplanır (limitin 5 katı), sonra Türkçe olanlar başa
+   * alınıp kesilir. Doğrudan limitte kesmek, Türkçe sonuçlar listenin sonunda
+   * kaldığında onları tamamen eliyordu.
+   */
+  const pool = limitPerType * 5;
+
   for (const item of items) {
     if (item.type === "series") continue;
+    if (movies.length >= pool && channels.length >= pool) break;
     if (!normalize(item.title).includes(normalized)) continue;
     if (item.type === "movie") {
-      if (movies.length < limitPerType) movies.push(item);
-    } else if (channels.length < limitPerType) {
+      if (movies.length < pool) movies.push(item);
+    } else if (channels.length < pool) {
       channels.push(item);
     }
   }
 
   for (const item of series) {
-    if (matchedSeries.length >= limitPerType) break;
+    if (matchedSeries.length >= pool) break;
     if (normalize(item.title).includes(normalized)) matchedSeries.push(item);
   }
 
-  return { movies, series: matchedSeries, channels };
+  return {
+    movies: turkishFirst(movies, isTurkishItem).slice(0, limitPerType),
+    series: turkishFirst(matchedSeries, isTurkishSeries).slice(0, limitPerType),
+    channels: turkishFirst(channels, isTurkishItem).slice(0, limitPerType),
+  };
 }
 
 export function typeLabel(type: ContentType): string {
