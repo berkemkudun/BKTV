@@ -3,6 +3,7 @@
 import {
   AlertCircle,
   CheckCircle2,
+  Download,
   Eye,
   EyeOff,
   FileUp,
@@ -365,6 +366,37 @@ export function SourceForm({
           <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-accent/25 bg-accent/8 px-4 py-3 text-[13.5px] leading-relaxed text-accent-300">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{localError ?? load.error}</span>
+          </div>
+        )}
+
+        {/*
+          Sunucu sağlayıcı tarafından engellenmiş olabilir (paneller veri merkezi
+          IP'lerini sıkça engeller). Bu durumda liste kullanıcının kendi
+          bağlantısından indirilip dosya olarak eklenebilir — her zaman çalışan yol.
+        */}
+        {tab === "url" && url.trim() && (localError || (submitted && load.error)) && (
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="text-[12.5px] leading-relaxed text-fg-muted">
+              Uygulama bir sunucuda çalışıyorsa sağlayıcı bu isteği engellemiş olabilir. Listeyi kendi
+              bağlantından indirip dosya olarak ekleyebilirsin:
+            </p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <a
+                href={url.trim()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/5 px-4 text-[13.5px] font-semibold transition-colors hover:bg-white/10"
+              >
+                <Download className="h-4 w-4" /> 1. Listeyi indir
+              </a>
+              <button
+                type="button"
+                onClick={() => setTab("file")}
+                className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-[13.5px] font-semibold text-white transition-colors hover:bg-accent-600"
+              >
+                <FileUp className="h-4 w-4" /> 2. Dosyayı yükle
+              </button>
+            </div>
           </div>
         )}
       </div>

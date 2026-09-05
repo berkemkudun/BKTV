@@ -99,8 +99,9 @@ export function buildSourceCandidates(
   const kind = detectStreamKind(url);
 
   const push = (candidateUrl: string, candidateKind: StreamKind, viaProxy: boolean, label: string) => {
-    // Mixed content: proxy'siz aday tarayıcıda hiç istek bile atamaz.
-    if (env.insecurePage && !viaProxy) return;
+    // Mixed content: https sayfada http adres tarayıcıda hiç istek bile atamaz.
+    // (https'e yükseltilmiş adaylar bu kuraldan muaf — engellenen şey şema.)
+    if (env.insecurePage && !viaProxy && candidateUrl.toLowerCase().startsWith("http://")) return;
     // MSE yoksa yalnızca native açılabilen kaynaklar denenebilir.
     if (!env.mseSupported) {
       if (candidateKind === "mpegts") return;
@@ -116,6 +117,22 @@ export function buildSourceCandidates(
   if (forceProxy || env.insecurePage) {
     if (hlsVariant) push(hlsVariant, "hls", true, "HLS + proxy");
     push(url, kind, true, "proxy");
+
+    /*
+     * Son çare: adresi https'e yükselt.
+     *
+     * Sayfa https iken http yayın engelli, proxy de sağlayıcı veri merkezi
+     * IP'lerini engelliyorsa çalışmıyor. Bazı paneller aynı adresi TLS ile de
+     * veriyor; o durumda tarayıcı yayını doğrudan açabiliyor. Panel TLS
+     * konuşmuyorsa bağlantı anında reddedilir, zincir hızlıca ilerler.
+     */
+    if (env.insecurePage) {
+      const secure = url.replace(/^http:/i, "https:");
+      const secureHls = hlsVariant?.replace(/^http:/i, "https:");
+      if (secureHls) push(secureHls, "hls", false, "HLS (https)");
+      push(secure, kind, false, "https");
+    }
+
     if (hlsVariant) push(hlsVariant, "hls", false, "HLS");
     push(url, kind, false, "doğrudan");
   } else {

@@ -48,13 +48,20 @@ test("buildSourceCandidates: aynı adres iki kez denenmez", () => {
   assert.equal(urls.size, candidates.length);
 });
 
-test("buildSourceCandidates: https sayfada http yayın yalnızca proxy'den denenir", () => {
-  // Mixed content: tarayıcı doğrudan bağlantı için istek bile atmaz.
+test("buildSourceCandidates: https sayfada http yayın için doğrudan aday üretilmez", () => {
+  // Mixed content: tarayıcı http adres için istek bile atmaz; ya proxy ya https.
   const env: PlaybackEnvironment = { insecurePage: true, mseSupported: true, nativeHls: false };
   const candidates = buildSourceCandidates("http://h:8080/live/u/p/123.ts", false, env);
   assert.ok(candidates.length > 0);
-  assert.ok(candidates.every((candidate) => candidate.viaProxy));
   assert.equal(candidates[0].kind, "hls");
+  assert.equal(candidates[0].viaProxy, true);
+  assert.ok(
+    candidates.every(
+      (candidate) => candidate.viaProxy || candidate.originalUrl.startsWith("https://"),
+    ),
+  );
+  // Proxy engellenirse son çare olarak adresin https hali denenir.
+  assert.ok(candidates.some((candidate) => !candidate.viaProxy && candidate.originalUrl.startsWith("https://")));
 });
 
 test("buildSourceCandidates: MSE yoksa (iOS) sadece native HLS adayları kalır", () => {
