@@ -27,43 +27,81 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Sadece http/https" }, { status: 400 });
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15_000);
+  /*
+   * Tek deneme yanıltıcı olabiliyor:
+   *  - Bazı paneller canlı TS yayınında Range isteğine 403/416 dönüyor
+   *    (yayın aslında çalışıyor) — Range'siz tekrar denenir.
+   *  - Bazıları VLC user-agent'ını reddedip tarayıcı UA'sını kabul ediyor.
+   * Bu yüzden birkaç kombinasyon denenip EN İYİ sonuç raporlanır.
+   */
+  const attempts: { userAgent: string; range: boolean }[] = [
+    { userAgent: "VLC/3.0.20 LibVLC/3.0.20", range: true },
+    { userAgent: "VLC/3.0.20 LibVLC/3.0.20", range: false },
+    {
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      range: false,
+    },
+  ];
 
-  try {
-    const response = await fetch(target, {
-      signal: controller.signal,
-      redirect: "follow",
-      headers: {
-        "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
-        Accept: "*/*",
-        // İlk baytı iste: canlı yayınlarda tüm gövdeyi indirmeyi engeller.
-        Range: "bytes=0-0",
-      },
-      cache: "no-store",
-    });
+  let best: {
+    reachable: boolean;
+    timedOut?: boolean;
+    status: number;
+    ok: boolean;
+    contentType?: string | null;
+    contentLength?: string | null;
+    acceptRanges?: string | null;
+    cors?: string | null;
+  } | null = null;
 
-    // Gövdeyi okumadan bırak.
-    void response.body?.cancel();
+  const deadline = Date.now() + 25_000;
 
-    return NextResponse.json({
-      reachable: true,
-      status: response.status,
-      ok: response.ok || response.status === 206,
-      contentType: response.headers.get("content-type"),
-      contentLength: response.headers.get("content-length"),
-      acceptRanges: response.headers.get("accept-ranges"),
-      cors: response.headers.get("access-control-allow-origin"),
-    });
-  } catch (error) {
-    const aborted = error instanceof Error && error.name === "AbortError";
-    return NextResponse.json({
-      reachable: false,
-      timedOut: aborted,
-      status: 0,
-      ok: false,
-    });
-  } finally {
-    clearTimeout(timeout);
+  for (const attempt of attempts) {
+    const remaining = deadline - Date.now();
+    if (remaining < 3_000) break;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Math.min(remaining, 12_000));
+
+    const headers: Record<string, string> = {
+      "User-Agent": attempt.userAgent,
+      Accept: "*/*",
+    };
+    // İlk baytı iste: canlı yayınlarda tüm gövdeyi indirmeyi engeller.
+    if (attempt.range) headers.Range = "bytes=0-0";
+
+    try {
+      const response = await fetch(target, {
+        signal: controller.signal,
+        redirect: "follow",
+        headers,
+        cache: "no-store",
+      });
+
+      // Gövdeyi okumadan bırak.
+      void response.body?.cancel();
+
+      const result = {
+        reachable: true,
+        status: response.status,
+        ok: response.ok || response.status === 206,
+        contentType: response.headers.get("content-type"),
+        contentLength: response.headers.get("content-length"),
+        acceptRanges: response.headers.get("accept-ranges"),
+        cors: response.headers.get("access-control-allow-origin"),
+      };
+
+      if (result.ok) return NextResponse.json(result);
+      // Başarısızsa sakla ama denemeye devam et (belki başka UA/Range çalışır).
+      if (!best || (!best.reachable && result.reachable)) best = result;
+    } catch (error) {
+      const aborted = error instanceof Error && error.name === "AbortError";
+      if (!best) best = { reachable: false, timedOut: aborted, status: 0, ok: false };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
+
+  return NextResponse.json(best ?? { reachable: false, status: 0, ok: false });
 }

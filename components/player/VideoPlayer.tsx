@@ -109,6 +109,14 @@ export function VideoPlayer({
     () => typeof window !== "undefined" && detectEnvironment(src).insecurePage,
     [src],
   );
+  /** Uygulama uzak bir sunucuda mı? 403/404 tanısı buna göre tamamen değişiyor. */
+  const hosted = useMemo(
+    () =>
+      typeof window !== "undefined" &&
+      !/^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/.test(window.location.hostname) &&
+      !/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(window.location.hostname),
+    [],
+  );
   const [candidateIndex, setCandidateIndex] = useState(0);
 
   // src değişince aday zincirini render sırasında başa sar.
@@ -631,6 +639,7 @@ export function VideoPlayer({
           src={src}
           mediaErrorMessage={mediaErrorMessage}
           mixedContent={mixedContent}
+          hosted={hosted}
           onBack={onBack}
           onRetry={() => setCandidateIndex(0)}
           onRetryWithProxy={() => {
@@ -667,10 +676,10 @@ export function VideoPlayer({
         )}
       </div>
 
-      {/* Alt kontroller */}
+      {/* Alt kontroller — hata ekranı açıkken gizlenir (tanı metnini örtüyordu) */}
       <div
         className={`absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 pb-[max(14px,env(safe-area-inset-bottom))] pt-14 transition-opacity duration-300 sm:px-5 sm:pb-5 sm:pt-16 ${
-          controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
+          controlsVisible && !failed ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       >
         {!isLive && (
@@ -888,6 +897,7 @@ function FailureScreen({
   src,
   mediaErrorMessage,
   mixedContent,
+  hosted,
   onBack,
   onRetry,
   onRetryWithProxy,
@@ -896,6 +906,8 @@ function FailureScreen({
   mediaErrorMessage?: string;
   /** Sayfa https, yayın http: doğrudan bağlantı zaten tarayıcı tarafından engellendi */
   mixedContent?: boolean;
+  /** Uygulama uzak bir sunucuda çalışıyor (localhost değil) */
+  hosted?: boolean;
   onBack?: () => void;
   onRetry: () => void;
   onRetryWithProxy: () => void;
@@ -906,47 +918,60 @@ function FailureScreen({
   useEffect(() => {
     let cancelled = false;
     probeStream(src).then((probe) => {
-      if (!cancelled) setDiagnosis(diagnose(src, mediaErrorMessage, probe));
+      if (!cancelled) {
+        setDiagnosis(
+          diagnose(src, mediaErrorMessage, probe, {
+            hosted: Boolean(hosted),
+            mixedContent: Boolean(mixedContent),
+          }),
+        );
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [src, mediaErrorMessage]);
+  }, [src, mediaErrorMessage, hosted, mixedContent]);
 
+  /*
+   * Kutu küçük olabilir (Canlı TV'de oynatıcı 16:9 bir karttır): metin
+   * kaydırılabilir olmalı, aksi halde tanı yazısı kırpılıyor ve alttaki
+   * kontrol çubuğunun altında kalıyordu.
+   */
   return (
-    <div className="absolute inset-0 z-30 grid place-items-center bg-black/85 p-6">
-      <div className="max-w-lg text-center">
-        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-accent/15 text-accent">
-          <AlertTriangle className="h-7 w-7" />
+    <div className="absolute inset-0 z-30 overflow-y-auto overscroll-contain bg-black/90 p-4 sm:p-6">
+      <div className="mx-auto flex min-h-full max-w-lg flex-col items-center justify-center text-center">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/15 text-accent sm:h-14 sm:w-14">
+          <AlertTriangle className="h-5 w-5 sm:h-7 sm:w-7" />
         </span>
 
         {diagnosis ? (
           <>
-            <h3 className="mt-4 text-[19px] font-bold">{diagnosis.title}</h3>
-            <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">{diagnosis.detail}</p>
+            <h3 className="mt-3 text-[15px] font-bold sm:mt-4 sm:text-[19px]">{diagnosis.title}</h3>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-fg-muted sm:mt-2 sm:text-[14px]">
+              {diagnosis.detail}
+            </p>
           </>
         ) : (
           <>
-            <h3 className="mt-4 text-[19px] font-bold">Yayın açılamadı</h3>
-            <p className="mt-2 flex items-center justify-center gap-2 text-[14px] text-fg-muted">
+            <h3 className="mt-3 text-[15px] font-bold sm:mt-4 sm:text-[19px]">Yayın açılamadı</h3>
+            <p className="mt-2 flex items-center justify-center gap-2 text-[13px] text-fg-muted sm:text-[14px]">
               <Loader2 className="h-4 w-4 animate-spin" /> Sebep araştırılıyor…
             </p>
           </>
         )}
 
         {mixedContent && (
-          <p className="mt-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[12.5px] leading-relaxed text-fg-muted">
-            Bu sayfa https, yayın adresi ise http. Tarayıcı böyle bir yayını doğrudan açamıyor; bu yüzden
-            yayın otomatik olarak sunucu üzerinden (proxy) aktarılıyor. Sağlayıcı yavaşsa ilk açılış birkaç
-            saniye sürebilir.
+          <p className="mt-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[11.5px] leading-relaxed text-fg-muted sm:px-4 sm:py-3 sm:text-[12.5px]">
+            Bu sayfa https, yayın adresi ise http. Tarayıcı böyle bir yayını doğrudan açamaz; bu yüzden
+            yayın sunucu üzerinden (proxy) aktarılmak zorunda.
           </p>
         )}
 
-        <div className="mt-5 flex flex-wrap justify-center gap-3">
+        <div className="mt-4 flex flex-wrap justify-center gap-2 pb-1 sm:mt-5 sm:gap-3">
           <button
             type="button"
             onClick={onRetry}
-            className="rounded-xl bg-accent px-4 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-accent-600"
+            className="rounded-xl bg-accent px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-accent-600 sm:px-4 sm:py-2.5 sm:text-[14px]"
           >
             Baştan dene
           </button>
@@ -955,7 +980,7 @@ function FailureScreen({
             <button
               type="button"
               onClick={onRetryWithProxy}
-              className="rounded-xl border border-white/12 bg-white/5 px-4 py-2.5 text-[14px] font-semibold transition-colors hover:bg-white/10"
+              className="rounded-xl border border-white/12 bg-white/5 px-3.5 py-2 text-[13px] font-semibold transition-colors hover:bg-white/10 sm:px-4 sm:py-2.5 sm:text-[14px]"
             >
               Proxy ile dene
             </button>
@@ -967,7 +992,7 @@ function FailureScreen({
               onClick={() => {
                 void navigator.clipboard?.writeText(src).then(() => setCopied(true));
               }}
-              className="rounded-xl border border-white/12 bg-white/5 px-4 py-2.5 text-[14px] font-semibold transition-colors hover:bg-white/10"
+              className="rounded-xl border border-white/12 bg-white/5 px-3.5 py-2 text-[13px] font-semibold transition-colors hover:bg-white/10 sm:px-4 sm:py-2.5 sm:text-[14px]"
             >
               {copied ? "Kopyalandı ✓" : "Bağlantıyı kopyala (VLC için)"}
             </button>
@@ -977,7 +1002,7 @@ function FailureScreen({
             <button
               type="button"
               onClick={onBack}
-              className="rounded-xl border border-white/12 bg-white/5 px-4 py-2.5 text-[14px] font-semibold transition-colors hover:bg-white/10"
+              className="rounded-xl border border-white/12 bg-white/5 px-3.5 py-2 text-[13px] font-semibold transition-colors hover:bg-white/10 sm:px-4 sm:py-2.5 sm:text-[14px]"
             >
               Geri dön
             </button>

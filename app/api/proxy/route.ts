@@ -30,22 +30,54 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Sadece http/https desteklenir" }, { status: 400 });
   }
 
-  const headers: Record<string, string> = {
-    "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
-    Accept: "*/*",
-  };
   const range = request.headers.get("range");
-  if (range) headers.Range = range;
 
-  let upstream: Response;
-  try {
-    upstream = await fetch(target, { headers, redirect: "follow", cache: "no-store" });
-  } catch {
-    return NextResponse.json({ error: "Kaynağa ulaşılamadı" }, { status: 502 });
+  /*
+   * Paneller user-agent konusunda tutarsız: kimi yalnızca VLC'yi, kimi yalnızca
+   * tarayıcıyı kabul ediyor; bazıları da canlı yayında Range isteğine 403 dönüyor.
+   * 401/403 alınırsa aynı adres farklı kombinasyonlarla bir kez daha denenir.
+   */
+  const attempts: { userAgent: string; withRange: boolean }[] = [
+    { userAgent: "VLC/3.0.20 LibVLC/3.0.20", withRange: true },
+    {
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      withRange: true,
+    },
+    { userAgent: "Lavf/60.16.100", withRange: false },
+  ];
+
+  let upstream: Response | null = null;
+  let lastStatus = 0;
+
+  for (const attempt of attempts) {
+    const headers: Record<string, string> = {
+      "User-Agent": attempt.userAgent,
+      Accept: "*/*",
+    };
+    if (range && attempt.withRange) headers.Range = range;
+
+    let response: Response;
+    try {
+      response = await fetch(target, { headers, redirect: "follow", cache: "no-store" });
+    } catch {
+      continue;
+    }
+
+    if (response.ok || response.status === 206) {
+      upstream = response;
+      break;
+    }
+
+    lastStatus = response.status;
+    void response.body?.cancel();
+    // Yalnızca "reddedildi" hallerinde tekrar denemek anlamlı.
+    if (response.status !== 401 && response.status !== 403 && response.status !== 416) break;
   }
 
-  if (!upstream.ok && upstream.status !== 206) {
-    return NextResponse.json({ error: `Kaynak hatası (HTTP ${upstream.status})` }, { status: 502 });
+  if (!upstream) {
+    if (!lastStatus) return NextResponse.json({ error: "Kaynağa ulaşılamadı" }, { status: 502 });
+    return NextResponse.json({ error: `Kaynak hatası (HTTP ${lastStatus})` }, { status: 502 });
   }
 
   const contentType = upstream.headers.get("content-type") ?? "";

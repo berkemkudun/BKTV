@@ -20,6 +20,14 @@ export interface ProbeResult {
   cors?: string | null;
 }
 
+/** Tanının doğru olabilmesi için gereken bağlam. */
+export interface DiagnoseContext {
+  /** Uygulama uzak bir sunucuda mı çalışıyor (localhost değil)? */
+  hosted: boolean;
+  /** Sayfa https, yayın adresi http mü? */
+  mixedContent: boolean;
+}
+
 export interface Diagnosis {
   /** Kısa başlık */
   title: string;
@@ -45,6 +53,7 @@ export function diagnose(
   url: string,
   mediaErrorMessage: string | undefined,
   probe: ProbeResult | null,
+  context: DiagnoseContext = { hosted: false, mixedContent: false },
 ): Diagnosis {
   // 1. Tarayıcının hiç açamayacağı konteyner (AVI, FLV, WMV…)
   //    .mkv burada değil: içindeki kodek H.264/AAC ise Chrome oynatabiliyor.
@@ -64,10 +73,12 @@ export function diagnose(
         title: probe.timedOut ? "Sağlayıcı yanıt vermedi" : "Sağlayıcıya ulaşılamadı",
         detail:
           (probe.timedOut
-            ? "Adres 15 saniyede yanıt vermedi. Sunucu aşırı yüklü olabilir ya da bu yayın kapalı olabilir."
+            ? "Adres zamanında yanıt vermedi. Sunucu aşırı yüklü olabilir ya da bu yayın kapalı olabilir."
             : "Sunucu adrese hiç bağlanamadı. Sağlayıcı kapalı olabilir veya adres artık geçerli değil.") +
-          " Uygulama bir bulut sunucusunda (ör. Vercel) çalışıyorsa sağlayıcı veri merkezi IP'lerini " +
-          "engelliyor olabilir; aynı liste kendi bilgisayarında çalışan kopyada açılıyorsa sebep budur.",
+          (context.hosted
+            ? " Uygulama bir bulut sunucusunda (ör. Vercel) çalışıyor; sağlayıcı veri merkezi IP'lerini " +
+              "engelliyor olabilir. Aynı liste kendi bilgisayarındaki kopyada açılıyorsa sebep budur."
+            : ""),
         suggestProxy: false,
         suggestExternal: true,
       };
@@ -86,6 +97,30 @@ export function diagnose(
     }
 
     if (probe.status === 401 || probe.status === 403) {
+      /*
+       * Kritik ayrım: uygulama uzak bir sunucuda çalışıyorsa bu 403 neredeyse
+       * her zaman "sağlayıcı veri merkezi IP'lerini engelliyor" demektir —
+       * hesap gayet geçerlidir. Aynı liste kendi cihazında açılıyorsa kanıt budur.
+       * Kullanıcıya "hesabın süresi dolmuş" demek yanlış yönlendirmeydi.
+       */
+      if (context.hosted) {
+        return {
+          title: "Sağlayıcı bu sunucuyu engelliyor",
+          detail:
+            `Yayın isteği ${probe.status} ile reddedildi. Liste senin cihazında açılıyorsa hesabında ` +
+            "sorun yok: IPTV panelleri Vercel gibi veri merkezi IP'lerini engelliyor ve yayını yalnızca " +
+            "ev/mobil bağlantılardan veriyor." +
+            (context.mixedContent
+              ? " Yayın adresi http, bu sayfa https olduğu için tarayıcı doğrudan da bağlanamıyor — " +
+                "tek yol sunucu üzerinden geçmekti, o da engellendi."
+              : "") +
+            " Çözüm: uygulamayı kendi bilgisayarında çalıştır (npm run dev) ya da bağlantıyı kopyalayıp " +
+            "VLC'de aç.",
+          suggestProxy: false,
+          suggestExternal: true,
+        };
+      }
+
       return {
         title: "Sağlayıcı erişimi reddetti",
         detail: `Sunucu ${probe.status} döndü. Hesabın süresi dolmuş, şifre değişmiş ya da bu içerik paketinde olmayabilir.`,
@@ -97,7 +132,12 @@ export function diagnose(
     if (probe.status === 404) {
       return {
         title: "Yayın bulunamadı (404)",
-        detail: "Bu adres sağlayıcıda artık yok. Playlisti yenilemek adresleri güncelleyebilir.",
+        detail:
+          "Bu adres sağlayıcıda artık yok. Playlisti yenilemek adresleri güncelleyebilir." +
+          (context.hosted
+            ? " Bazı paneller engelledikleri sunuculara da 404 döndürüyor; aynı yayın kendi cihazında " +
+              "açılıyorsa sebep adres değil, engeldir."
+            : ""),
         suggestProxy: false,
         suggestExternal: false,
       };
