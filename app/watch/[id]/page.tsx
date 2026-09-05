@@ -11,7 +11,7 @@ import { useUserStore } from "@/lib/store/userStore";
 
 export default function WatchPage() {
   return (
-    <Suspense fallback={<div className="h-screen w-screen bg-black" />}>
+    <Suspense fallback={<div className="h-[100dvh] w-full bg-black" />}>
       <WatchScreen />
     </Suspense>
   );
@@ -80,12 +80,12 @@ function WatchScreen() {
   }, [router]);
 
   if (!hydrated) {
-    return <div className="h-screen w-screen bg-black" />;
+    return <div className="h-[100dvh] w-full bg-black" />;
   }
 
   if (!item || !streamUrl) {
     return (
-      <div className="grid h-screen w-screen place-items-center bg-ink-950">
+      <div className="grid h-[100dvh] w-full place-items-center bg-ink-950">
         <EmptyState
           title="Yayın bulunamadı"
           message="Bu içerik kütüphanede yok ya da stream adresi eksik."
@@ -97,7 +97,7 @@ function WatchScreen() {
   }
 
   return (
-    <div className="h-screen w-screen bg-black">
+    <div className="h-[100dvh] w-full bg-black">
       <VideoPlayer
         key={`${item.id}-${sourceIndex}`}
         src={streamUrl}

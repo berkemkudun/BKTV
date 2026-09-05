@@ -56,7 +56,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-[900px] px-5 pb-16 pt-6 lg:px-8">
+    <div className="mx-auto max-w-[900px] px-4 sm:px-5 pb-16 pt-6 lg:px-8">
       {/* Playlist yönetimi */}
       <Section
         title="Playlist Yönetimi"

@@ -60,7 +60,7 @@ export function ContentCard({
       ref={ref}
       href={href}
       className={`group relative block focus:outline-none ${
-        fill ? "w-full" : "w-[168px] shrink-0 xl:w-[184px]"
+        fill ? "w-full" : "w-[132px] shrink-0 sm:w-[168px] xl:w-[184px]"
       }`}
     >
       <div className="relative overflow-hidden rounded-[var(--radius-card)] shadow-[var(--shadow-glow)] transition-all duration-300 group-hover:-translate-y-1.5 group-hover:shadow-[0_24px_48px_-20px_rgba(0,0,0,1)] group-focus-visible:-translate-y-1.5">

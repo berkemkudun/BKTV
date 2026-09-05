@@ -21,7 +21,7 @@ export function FilterBar({
   const all: FilterOption[] = [{ value: "", label: allLabel }, ...options];
 
   return (
-    <div className="no-scrollbar flex gap-2 overflow-x-auto px-5 py-1 lg:px-8">
+    <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 sm:px-5 py-1 lg:px-8">
       {all.map((option) => {
         const active = option.value === value;
         return (

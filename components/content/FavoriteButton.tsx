@@ -38,7 +38,7 @@ export function FavoriteButton({
       <button
         type="button"
         onClick={handleClick}
-        className={`flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-[15px] font-semibold transition-colors hover:bg-white/10 ${className}`}
+        className={`flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 sm:px-5 py-3 text-[15px] font-semibold transition-colors hover:bg-white/10 ${className}`}
       >
         <Heart className={`h-[18px] w-[18px] ${isFavorite ? "fill-accent text-accent" : ""}`} />
         {isFavorite ? "Listemde" : "Listeme Ekle"}

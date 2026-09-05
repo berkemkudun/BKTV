@@ -28,7 +28,7 @@ export default function SeriesDetailPage() {
 
   if (!hydrated) {
     return (
-      <div className="px-5 pt-6 lg:px-8">
+      <div className="px-4 sm:px-5 pt-6 lg:px-8">
         <LoadingSkeleton className="h-[420px] w-full rounded-3xl" />
       </div>
     );
@@ -73,9 +73,9 @@ export default function SeriesDetailPage() {
         </button>
       </div>
 
-      <div className="relative -mt-28 px-5 lg:-mt-36 lg:px-8">
+      <div className="relative -mt-28 px-4 sm:px-5 lg:-mt-36 lg:px-8">
         <div className="flex flex-col gap-7 lg:flex-row">
-          <div className="w-[170px] shrink-0 lg:w-[220px]">
+          <div className="w-[140px] shrink-0 sm:w-[170px] lg:w-[220px]">
             <SmartImage
               src={meta?.poster ?? series.logo}
               alt={series.title}
@@ -85,7 +85,7 @@ export default function SeriesDetailPage() {
           </div>
 
           <div className="min-w-0 flex-1 lg:pt-14">
-            <h1 className="text-balance text-[30px] font-extrabold leading-tight tracking-tight lg:text-[42px]">
+            <h1 className="text-balance text-[24px] font-extrabold leading-tight tracking-tight sm:text-[30px] lg:text-[42px]">
               {meta?.title ?? series.title}
             </h1>
 
@@ -149,7 +149,7 @@ export default function SeriesDetailPage() {
         </div>
       </div>
 
-      <section className="mt-12 px-5 lg:px-8">
+      <section className="mt-12 px-4 sm:px-5 lg:px-8">
         <div className="no-scrollbar mb-5 flex gap-2 overflow-x-auto">
           {series.seasons.map((item) => (
             <button

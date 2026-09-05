@@ -50,17 +50,62 @@ export function containerLabel(url: string): string {
 }
 
 /**
+ * Tarayıcı ortamının oynatma yetenekleri.
+ *
+ * Node (test) tarafında `window` yoktur; o durumda "her şey mümkün" varsayılır
+ * ve aday sırası eski davranışıyla aynı kalır.
+ */
+export interface PlaybackEnvironment {
+  /** Sayfa https iken http yayın: tarayıcı doğrudan bağlantıyı engeller (mixed content) */
+  insecurePage: boolean;
+  /** MediaSource var mı? Yoksa (iOS Safari) mpegts.js ve hls.js çalışamaz */
+  mseSupported: boolean;
+  /** Safari/iOS: .m3u8 doğrudan <video src> ile açılabilir */
+  nativeHls: boolean;
+}
+
+export function detectEnvironment(streamUrl?: string): PlaybackEnvironment {
+  if (typeof window === "undefined") {
+    return { insecurePage: false, mseSupported: true, nativeHls: false };
+  }
+  const video = document.createElement("video");
+  return {
+    insecurePage:
+      window.location.protocol === "https:" && Boolean(streamUrl?.toLowerCase().startsWith("http://")),
+    mseSupported:
+      typeof window.MediaSource !== "undefined" &&
+      typeof window.MediaSource.isTypeSupported === "function",
+    nativeHls: video.canPlayType("application/vnd.apple.mpegurl") !== "",
+  };
+}
+
+/**
  * Denenecek kaynak sırası.
  *
- * Sıra bilinçli: önce doğrudan (kullanıcının kendi IP'si üzerinden, en hızlısı),
- * .ts ise önce onun HLS varyantı, en sonda proxy'li denemeler.
- * Her adım bir öncekinin hatası üzerine otomatik denenir.
+ * Sıra bilinçli:
+ *  - Sayfa https, yayın http ise DOĞRUDAN bağlantı tarayıcı tarafından engellenir
+ *    (mixed content). Bu durumda yalnızca proxy'li adaylar üretilir — aksi halde
+ *    kullanıcı "hiçbir kanal açılmıyor" diyor ve zincir boşuna 4 adım ilerliyordu.
+ *  - MSE yoksa (iOS Safari) mpegts.js ve hls.js kullanılamaz; sadece native HLS
+ *    açılabilen .m3u8 adayları anlamlıdır.
+ *  - Diğer hallerde: HLS varyantı → doğrudan → proxy'li HLS → proxy.
  */
-export function buildSourceCandidates(url: string, forceProxy = false): StreamCandidate[] {
+export function buildSourceCandidates(
+  url: string,
+  forceProxy = false,
+  env: PlaybackEnvironment = detectEnvironment(url),
+): StreamCandidate[] {
   const candidates: StreamCandidate[] = [];
   const kind = detectStreamKind(url);
 
   const push = (candidateUrl: string, candidateKind: StreamKind, viaProxy: boolean, label: string) => {
+    // Mixed content: proxy'siz aday tarayıcıda hiç istek bile atamaz.
+    if (env.insecurePage && !viaProxy) return;
+    // MSE yoksa yalnızca native açılabilen kaynaklar denenebilir.
+    if (!env.mseSupported) {
+      if (candidateKind === "mpegts") return;
+      if (candidateKind === "hls" && !env.nativeHls) return;
+    }
     const finalUrl = viaProxy ? `/api/proxy?url=${encodeURIComponent(candidateUrl)}` : candidateUrl;
     if (candidates.some((candidate) => candidate.url === finalUrl)) return;
     candidates.push({ url: finalUrl, kind: candidateKind, viaProxy, label, originalUrl: candidateUrl });
@@ -68,18 +113,30 @@ export function buildSourceCandidates(url: string, forceProxy = false): StreamCa
 
   const hlsVariant = toHlsVariant(url);
 
-  if (forceProxy) {
+  if (forceProxy || env.insecurePage) {
     if (hlsVariant) push(hlsVariant, "hls", true, "HLS + proxy");
     push(url, kind, true, "proxy");
     if (hlsVariant) push(hlsVariant, "hls", false, "HLS");
     push(url, kind, false, "doğrudan");
-    return candidates;
+  } else {
+    if (hlsVariant) push(hlsVariant, "hls", false, "HLS");
+    push(url, kind, false, "doğrudan");
+    if (hlsVariant) push(hlsVariant, "hls", true, "HLS + proxy");
+    push(url, kind, true, "proxy");
   }
 
-  if (hlsVariant) push(hlsVariant, "hls", false, "HLS");
-  push(url, kind, false, "doğrudan");
-  if (hlsVariant) push(hlsVariant, "hls", true, "HLS + proxy");
-  push(url, kind, true, "proxy");
+  // Hiçbir aday üretilemediyse (ör. MSE yok + HLS varyantı yok) en azından
+  // orijinal adresi dene; tarayıcı belki açar, açamazsa tanı ekranı devreye girer.
+  if (candidates.length === 0) {
+    const viaProxy = env.insecurePage;
+    candidates.push({
+      url: viaProxy ? `/api/proxy?url=${encodeURIComponent(url)}` : url,
+      kind,
+      viaProxy,
+      label: viaProxy ? "proxy" : "doğrudan",
+      originalUrl: url,
+    });
+  }
 
   return candidates;
 }

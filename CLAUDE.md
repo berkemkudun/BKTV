@@ -74,6 +74,7 @@ sonuçlar IndexedDB'de 14 gün cache'lenir). 10.000 içerikli bir kütüphanede 
 | State | `lib/store/*` | zustand: `libraryStore`, `userStore`, `uiStore` |
 | TMDB | `lib/tmdb/server.ts` (sunucu) + `lib/tmdb/client.ts` (kuyruk/cache) | |
 | UI | `components/*`, `app/*` | Tüm sayfalar client component (veri IndexedDB'de) |
+| Kaynak ekleme formu | `components/playlist/SourceForm.tsx` | Dört giriş yolu (M3U URL / panel / dosya / demo); ana sayfa paneli ve modal aynı bileşeni kullanır |
 
 ### Storage'ı değiştirmek (ör. Supabase)
 
@@ -111,10 +112,25 @@ doğrudan açabilir:
 **`.ts` → `.m3u8` varyantı → doğrudan → proxy'li HLS → proxy'li orijinal.** Çoğu panel aynı kanalı
 `.m3u8` olarak da sunduğu için ilk aday genelde tutar.
 
+Aday listesi ortama göre budanır (`detectEnvironment()`):
+
+- **Sayfa https, yayın http ise (mixed content) yalnızca proxy'li adaylar üretilir.** Tarayıcı böyle
+  bir yayın için istek bile atmaz; Vercel'de "hiçbir kanal açılmıyor" şikayetinin baş sebebi buydu.
+- **MSE yoksa (iOS Safari) `mpegts.js` ve `hls.js` çalışamaz;** sadece native açılabilen `.m3u8`
+  adayları kalır.
+
 Hata durumunda `lib/player/diagnose.ts` devreye girer: `/api/probe` adresi sunucudan yoklar
 (sadece başlıklar, gövde indirilmez) ve tarayıcının `MediaError.message`'ıyla birleştirip somut bir
 sebep üretir — "503 sağlayıcı kapalı" ile "kodek desteklenmiyor" birbirinden ayrılır.
 Genel "bilinmeyen hata" mesajı yazmayın; kullanıcı ne yapacağını bilmeli.
+
+Oynatıcıda ayrıca:
+- **Bekçi (watchdog):** aday 15 saniyede ilk kareyi veremezse (bağlantı açık ama veri gelmiyor)
+  otomatik olarak sıradakine geçilir. Bu olmadan ekran sonsuz spinner'da kalıyordu.
+- **Sesli otomatik oynatma reddedilirse yayın sessize alınıp tekrar denenir** ve kullanıcıya
+  "ses kapalı başladı" düğmesi gösterilir. `play()` reddi artık "yayın açılmadı" sayılmıyor.
+- **`failed` ayrı bir state değil:** `candidateIndex >= candidates.length` demektir. İki state'i
+  senkron tutmaya çalışmak zincirin hata ekranıyla ayrışmasına yol açıyordu.
 
 Dikkat:
 - **`mpegts.js` `enableWorker: false` ile kullanılmalı.** Worker kodu Blob olarak üretiliyor ve
@@ -146,5 +162,12 @@ Dikkat:
   saklanmadığı için eski kütüphaneler otomatik güncellenemez; Ayarlar sayfası "yenile" uyarısı gösterir.
 - **Gerçek listeler devasadır.** 10.000+ kayıt normaldir: parse `parseM3UChunked` ile parçalanır,
   listeler `usePagedList` ile kademeli render edilir, posterler `useInView` ile lazy yüklenir.
+- **Mobil birinci sınıf vatandaş.** Alt gezinme çubuğu (`components/layout/MobileNav.tsx`) lg altında
+  her sayfada duruyor, `main` bu yüzden alttan `78px + safe-area` boşluk bırakıyor. Canlı TV'de
+  oynatıcı mobilde DOM'da listeden önce ve yapışkan: yüzlerce kanalın altında kalınca kullanıcı
+  "kanal açılmıyor" sanıyordu. Form inputları mobilde 16px — altında iOS Safari sayfayı zoomluyor.
+- **Grid item'lara `min-w-0` vermeyi unutmayın.** Otomatik minimum boyut (video elemanı, uzun grup
+  adları) tek sütunlu mobil ızgarayı ekranın üç katı genişliğe taşırıyordu; `body`'de
+  `overflow-x: hidden` olduğu için sorun görünmüyor, sadece içerik kırpılıyordu.
 - **Sahte özellik yok.** Çalışmayan bir şey varsa (TMDB anahtarı yok, stream ölü, kaynak CORS engelli)
   arayüz bunu açıkça söyler. Yeni özellik eklerken bu ilkeyi koruyun.

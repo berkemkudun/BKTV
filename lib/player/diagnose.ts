@@ -62,9 +62,12 @@ export function diagnose(
     if (!probe.reachable) {
       return {
         title: probe.timedOut ? "Sağlayıcı yanıt vermedi" : "Sağlayıcıya ulaşılamadı",
-        detail: probe.timedOut
-          ? "Adres 15 saniyede yanıt vermedi. Sunucu aşırı yüklü olabilir ya da bu yayın kapalı olabilir."
-          : "Sunucu adrese hiç bağlanamadı. Sağlayıcı kapalı olabilir veya adres artık geçerli değil.",
+        detail:
+          (probe.timedOut
+            ? "Adres 15 saniyede yanıt vermedi. Sunucu aşırı yüklü olabilir ya da bu yayın kapalı olabilir."
+            : "Sunucu adrese hiç bağlanamadı. Sağlayıcı kapalı olabilir veya adres artık geçerli değil.") +
+          " Uygulama bir bulut sunucusunda (ör. Vercel) çalışıyorsa sağlayıcı veri merkezi IP'lerini " +
+          "engelliyor olabilir; aynı liste kendi bilgisayarında çalışan kopyada açılıyorsa sebep budur.",
         suggestProxy: false,
         suggestExternal: true,
       };

@@ -50,14 +50,14 @@ export function QuickTiles() {
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-4 px-5 pt-7 sm:grid-cols-2 lg:px-8 xl:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 px-4 pt-6 sm:gap-4 sm:px-5 lg:px-8 xl:grid-cols-4">
       {tiles.map((tile) => {
         const Icon = tile.icon;
         return (
           <Link
             key={tile.href}
             href={tile.href}
-            className="group flex items-center gap-4 rounded-2xl border border-white/8 p-4 transition-all duration-300 hover:-translate-y-1 hover:border-white/20"
+            className="group flex items-center gap-3 rounded-2xl border border-white/8 p-3 transition-all duration-300 hover:-translate-y-1 hover:border-white/20 sm:gap-4 sm:p-4"
             style={{ background: `linear-gradient(120deg, ${tile.from}, rgba(12,12,20,0.75))` }}
           >
             <span
@@ -67,10 +67,10 @@ export function QuickTiles() {
               <Icon className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-extrabold tracking-wide">{tile.label}</p>
-              <p className="truncate text-[12.5px] text-fg-muted">{tile.description}</p>
+              <p className="text-[13.5px] font-extrabold tracking-wide sm:text-[15px]">{tile.label}</p>
+              <p className="truncate text-[11.5px] text-fg-muted sm:text-[12.5px]">{tile.description}</p>
             </div>
-            <ChevronRight className="h-5 w-5 shrink-0 text-fg-dim transition-transform group-hover:translate-x-1" />
+            <ChevronRight className="hidden h-5 w-5 shrink-0 text-fg-dim transition-transform group-hover:translate-x-1 sm:block" />
           </Link>
         );
       })}

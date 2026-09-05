@@ -37,7 +37,7 @@ export default function ProviderPage() {
 
   if (!hydrated) {
     return (
-      <div className="px-5 pt-6 lg:px-8">
+      <div className="px-4 sm:px-5 pt-6 lg:px-8">
         <LoadingSkeleton className="h-[400px] w-full rounded-3xl" />
       </div>
     );
@@ -56,13 +56,13 @@ export default function ProviderPage() {
 
   return (
     <div className="pb-10">
-      <div className="px-5 pt-6 lg:px-8">
+      <div className="px-4 sm:px-5 pt-6 lg:px-8">
         <div
           className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/8 px-6 py-5"
           style={{ background: `linear-gradient(120deg, ${provider.color}30, rgba(10,10,17,0.85))` }}
         >
           <h1
-            className="text-[30px] font-extrabold tracking-tight lg:text-[36px]"
+            className="text-[24px] font-extrabold tracking-tight sm:text-[30px] lg:text-[36px]"
             style={{ color: provider.color === "#111827" ? "#E8E8F0" : provider.color }}
           >
             {provider.name}

@@ -9,7 +9,7 @@ export function LoadingSkeleton({ className = "" }: { className?: string }) {
 
 export function RowSkeleton({ count = 6, aspect = "aspect-[2/3]" }: { count?: number; aspect?: string }) {
   return (
-    <div className="flex gap-4 overflow-hidden px-5 lg:px-8">
+    <div className="flex gap-4 overflow-hidden px-4 sm:px-5 lg:px-8">
       {Array.from({ length: count }).map((_, index) => (
         <LoadingSkeleton key={index} className={`w-[168px] shrink-0 ${aspect}`} />
       ))}

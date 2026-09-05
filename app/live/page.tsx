@@ -20,7 +20,7 @@ import type { ContentItem } from "@/lib/types";
 
 export default function LiveTvPage() {
   return (
-    <Suspense fallback={<div className="px-5 pt-6 lg:px-8" />}>
+    <Suspense fallback={<div className="px-4 pt-6 sm:px-5 lg:px-8" />}>
       <LiveTvBrowser />
     </Suspense>
   );
@@ -96,7 +96,7 @@ function LiveTvBrowser() {
 
   if (!hydrated) {
     return (
-      <div className="space-y-4 px-5 pt-6 lg:px-8">
+      <div className="space-y-4 px-4 sm:px-5 pt-6 lg:px-8">
         <LoadingSkeleton className="h-11 w-full max-w-sm" />
         <LoadingSkeleton className="h-[420px] w-full" />
       </div>
@@ -115,9 +115,9 @@ function LiveTvBrowser() {
   }
 
   return (
-    <div className="px-5 pt-5 lg:px-8">
+    <div className="px-4 pt-4 sm:px-5 sm:pt-5 lg:px-8">
       {/* Kategori sekmeleri: Spor / Ulusal / Haber / Çocuk … */}
-      <div className="no-scrollbar -mx-5 mb-5 flex gap-2 overflow-x-auto px-5 lg:-mx-8 lg:px-8">
+      <div className="no-scrollbar -mx-4 mb-4 flex gap-2 overflow-x-auto px-4 sm:-mx-5 sm:mb-5 sm:px-5 lg:-mx-8 lg:px-8">
         <CategoryChip
           label="Tümü"
           count={channels.length}
@@ -143,9 +143,9 @@ function LiveTvBrowser() {
         ))}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[220px_1fr_minmax(360px,420px)]">
+      <div className="grid gap-5 sm:gap-6 xl:grid-cols-[220px_1fr_minmax(360px,420px)]">
         {/* Alt gruplar */}
-        <aside className="xl:sticky xl:top-[88px] xl:self-start">
+        <aside className="order-2 min-w-0 xl:order-1 xl:sticky xl:top-[88px] xl:self-start">
           <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wider text-fg-dim">
             {category ? "Alt gruplar" : "Gruplar"}
           </h2>
@@ -169,14 +169,14 @@ function LiveTvBrowser() {
         </aside>
 
         {/* Kanal listesi */}
-        <div className="min-w-0">
+        <div className="order-3 min-w-0 xl:order-2">
           <div className="relative mb-4">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-dim" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Kanal ara…"
-              className="h-11 w-full rounded-xl border border-white/8 bg-white/[0.04] pl-10 pr-4 text-[14px] outline-none transition-colors placeholder:text-fg-dim focus:border-accent/40"
+              className="h-12 w-full rounded-xl border border-white/8 bg-white/[0.04] pl-10 pr-4 text-[16px] outline-none transition-colors placeholder:text-fg-dim focus:border-accent/40 sm:h-11 sm:text-[14px]"
             />
           </div>
 
@@ -187,7 +187,7 @@ function LiveTvBrowser() {
               <p className="mb-3 text-[12.5px] text-fg-dim">
                 {filtered.length.toLocaleString("tr-TR")} kanal
               </p>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-3 2xl:grid-cols-4">
                 {visible.map((channel) => (
                   <ChannelCard
                     key={channel.id}
@@ -202,8 +202,12 @@ function LiveTvBrowser() {
           )}
         </div>
 
-        {/* Oynatıcı */}
-        <div className="xl:sticky xl:top-[88px] xl:self-start">
+        {/*
+          Oynatıcı mobilde DOM'da listeden ÖNCE ve yapışkan duruyor: kanal
+          seçildiğinde ekranda görünüyor. Önceden yüzlerce kanalın altında
+          kalıyordu ve "kanal açılmıyor" gibi görünüyordu.
+        */}
+        <div className="sticky top-[56px] z-20 order-1 -mx-4 min-w-0 bg-ink-950/95 px-4 pb-3 pt-1 backdrop-blur-xl sm:-mx-5 sm:top-[68px] sm:px-5 xl:order-3 xl:mx-0 xl:top-[88px] xl:self-start xl:bg-transparent xl:px-0 xl:pb-0 xl:backdrop-blur-none">
           {selected ? (
             <div className="overflow-hidden rounded-2xl border border-white/8 bg-ink-900">
               <div className="aspect-video w-full bg-black">
@@ -241,7 +245,7 @@ function LiveTvBrowser() {
               </div>
             </div>
           ) : (
-            <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-2xl border border-white/8 bg-ink-900 px-6 text-center">
+            <div className="hidden aspect-video flex-col items-center justify-center gap-3 rounded-2xl border border-white/8 bg-ink-900 px-6 text-center xl:flex">
               <Radio className="h-8 w-8 text-fg-dim" />
               <p className="text-[14px] font-semibold">İzlemek için bir kanal seç</p>
               <p className="max-w-[280px] text-[12.5px] leading-relaxed text-fg-dim">

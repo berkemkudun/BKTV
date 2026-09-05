@@ -32,8 +32,8 @@ export function CategoryTiles({ title, tiles }: { title: string; tiles: Category
   if (tiles.length === 0) return null;
 
   return (
-    <section className="px-5 pt-8 lg:px-8">
-      <h2 className="mb-4 text-[19px] font-bold tracking-tight lg:text-[21px]">{title}</h2>
+    <section className="px-4 pt-7 sm:px-5 lg:px-8">
+      <h2 className="mb-4 text-[17px] font-bold tracking-tight sm:text-[19px] lg:text-[21px]">{title}</h2>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
         {tiles.map((tile) => {

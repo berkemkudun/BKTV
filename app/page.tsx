@@ -7,20 +7,19 @@ import { ContentCard } from "@/components/content/ContentCard";
 import { ContentRow } from "@/components/content/ContentRow";
 import { ProgressCard } from "@/components/content/ProgressCard";
 import { ProviderCard } from "@/components/content/ProviderCard";
+import { AddSourcePanel } from "@/components/home/AddSourcePanel";
 import { CategoryTiles } from "@/components/home/CategoryTiles";
 import { HeroBanner, toHeroEntry } from "@/components/home/HeroBanner";
 import { QuickTiles } from "@/components/home/QuickTiles";
-import { EmptyState, RowSkeleton } from "@/components/ui/States";
+import { RowSkeleton } from "@/components/ui/States";
 import { useCategoryGroups, useChannels, useMovies, useSeries } from "@/lib/hooks/useLibrarySelectors";
 import { groupChannelsByCategory } from "@/lib/library/channelCategories";
 import { useLibraryStore } from "@/lib/store/libraryStore";
-import { useUiStore } from "@/lib/store/uiStore";
 import { useContinueWatching } from "@/lib/store/userStore";
 
 export default function HomePage() {
   const hydrated = useLibraryStore((state) => state.hydrated);
   const providers = useLibraryStore((state) => state.providers);
-  const openPlaylistDialog = useUiStore((state) => state.openPlaylistDialog);
 
   const movies = useMovies();
   const series = useSeries();
@@ -45,8 +44,8 @@ export default function HomePage() {
   if (!hydrated) {
     return (
       <div className="space-y-8 pt-6">
-        <div className="px-5 lg:px-8">
-          <div className="skeleton h-[380px] rounded-3xl xl:h-[440px]" />
+        <div className="px-4 sm:px-5 lg:px-8">
+          <div className="skeleton h-[220px] rounded-3xl sm:h-[380px] xl:h-[440px]" />
         </div>
         <RowSkeleton />
         <RowSkeleton />
@@ -54,19 +53,20 @@ export default function HomePage() {
     );
   }
 
-  if (movies.length === 0 && series.length === 0 && channels.length === 0) {
-    return (
-      <EmptyState
-        title="Kütüphanen boş"
-        message="Başlamak için bir M3U playlist ekle. Listeyi indirip platformlara ayıracağız."
-        actionLabel="Playlist Ekle"
-        onAction={openPlaylistDialog}
-      />
-    );
-  }
+  const isEmpty = movies.length === 0 && series.length === 0 && channels.length === 0;
 
   return (
     <div className="pb-10">
+      {/* Kaynak ekleme her zaman en üstte: uygulamanın ilk işi M3U eklemek. */}
+      <AddSourcePanel />
+
+      {isEmpty && (
+        <p className="px-4 pt-6 text-center text-[14px] leading-relaxed text-fg-muted sm:px-5 lg:px-8">
+          Kütüphanen henüz boş. Yukarıdaki seçeneklerden biriyle listeni ekle; içerikler otomatik olarak
+          film, dizi ve canlı kanallara ayrılacak.
+        </p>
+      )}
+
       {heroEntries.length > 0 && <HeroBanner entries={heroEntries} />}
 
       <QuickTiles />

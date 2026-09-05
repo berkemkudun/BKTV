@@ -27,7 +27,7 @@ export default function MovieDetailPage() {
 
   if (!hydrated) {
     return (
-      <div className="px-5 pt-6 lg:px-8">
+      <div className="px-4 sm:px-5 pt-6 lg:px-8">
         <LoadingSkeleton className="h-[420px] w-full rounded-3xl" />
       </div>
     );
@@ -77,9 +77,9 @@ export default function MovieDetailPage() {
         </button>
       </div>
 
-      <div className="relative -mt-32 px-5 lg:-mt-40 lg:px-8">
+      <div className="relative -mt-32 px-4 sm:px-5 lg:-mt-40 lg:px-8">
         <div className="flex flex-col gap-7 lg:flex-row">
-          <div className="w-[180px] shrink-0 lg:w-[240px]">
+          <div className="w-[140px] shrink-0 sm:w-[180px] lg:w-[240px]">
             <SmartImage
               src={meta?.poster ?? item.logo}
               alt={item.title}
@@ -89,7 +89,7 @@ export default function MovieDetailPage() {
           </div>
 
           <div className="min-w-0 flex-1 lg:pt-16">
-            <h1 className="text-balance text-[32px] font-extrabold leading-tight tracking-tight lg:text-[44px]">
+            <h1 className="text-balance text-[24px] font-extrabold leading-tight tracking-tight sm:text-[32px] lg:text-[44px]">
               {meta?.title ?? item.title}
             </h1>
             {meta?.originalTitle && meta.originalTitle !== meta.title && (
@@ -178,8 +178,8 @@ export default function MovieDetailPage() {
 
       {meta?.cast?.length ? (
         <section className="mt-12">
-          <h2 className="px-5 text-[19px] font-bold tracking-tight lg:px-8">Oyuncular</h2>
-          <div className="no-scrollbar mt-4 flex gap-4 overflow-x-auto px-5 pb-2 lg:px-8">
+          <h2 className="px-4 sm:px-5 text-[19px] font-bold tracking-tight lg:px-8">Oyuncular</h2>
+          <div className="no-scrollbar mt-4 flex gap-4 overflow-x-auto px-4 sm:px-5 pb-2 lg:px-8">
             {meta.cast.map((person) => (
               <div key={`${person.name}-${person.character}`} className="w-[120px] shrink-0">
                 <SmartImage

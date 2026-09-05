@@ -45,9 +45,9 @@ export function ContentRow({ title, href, children, meta }: ContentRowProps) {
 
   return (
     <section className="group/row relative py-4">
-      <div className="mb-3 flex items-baseline justify-between gap-4 px-5 lg:px-8">
+      <div className="mb-3 flex items-baseline justify-between gap-4 px-4 sm:px-5 lg:px-8">
         <div className="flex items-baseline gap-3">
-          <h2 className="text-[19px] font-bold tracking-tight lg:text-[21px]">{title}</h2>
+          <h2 className="text-[17px] font-bold tracking-tight sm:text-[19px] lg:text-[21px]">{title}</h2>
           {meta && <span className="text-[12.5px] text-fg-dim">{meta}</span>}
         </div>
         {href && (
@@ -85,7 +85,7 @@ export function ContentRow({ title, href, children, meta }: ContentRowProps) {
         <div
           ref={scrollerRef}
           onScroll={updateArrows}
-          className="no-scrollbar flex gap-4 overflow-x-auto scroll-smooth px-5 pb-2 lg:px-8"
+          className="no-scrollbar flex gap-3 overflow-x-auto scroll-smooth px-4 pb-2 sm:gap-4 sm:px-5 lg:px-8"
         >
           {children}
         </div>

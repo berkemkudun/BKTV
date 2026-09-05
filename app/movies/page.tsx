@@ -13,7 +13,7 @@ import { useUiStore } from "@/lib/store/uiStore";
 
 export default function MoviesPage() {
   return (
-    <Suspense fallback={<div className="px-5 pt-6 lg:px-8" />}>
+    <Suspense fallback={<div className="px-4 sm:px-5 pt-6 lg:px-8" />}>
       <MoviesBrowser />
     </Suspense>
   );
@@ -74,7 +74,7 @@ function MoviesBrowser() {
 
   if (!hydrated) {
     return (
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-5 px-5 pt-6 lg:px-8">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 sm:gap-5 px-4 sm:px-5 pt-6 lg:px-8">
         {Array.from({ length: 18 }).map((_, index) => (
           <LoadingSkeleton key={index} className="aspect-[2/3]" />
         ))}
@@ -102,11 +102,11 @@ function MoviesBrowser() {
         </div>
       )}
 
-      <p className="px-5 pt-4 text-[13px] text-fg-dim lg:px-8">
+      <p className="px-4 sm:px-5 pt-4 text-[13px] text-fg-dim lg:px-8">
         {total.toLocaleString("tr-TR")} film
       </p>
 
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-x-5 gap-y-7 px-5 pt-4 lg:px-8">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-x-3 gap-y-5 sm:gap-x-5 sm:gap-y-7 px-4 sm:px-5 pt-4 lg:px-8">
         {visible.map((item) => (
           <ContentCard
             key={item.id}
@@ -122,7 +122,7 @@ function MoviesBrowser() {
       </div>
 
       {hasMore && (
-        <div ref={sentinelRef} className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-5 px-5 pt-7 lg:px-8">
+        <div ref={sentinelRef} className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 sm:gap-5 px-4 sm:px-5 pt-7 lg:px-8">
           {Array.from({ length: 6 }).map((_, index) => (
             <LoadingSkeleton key={index} className="aspect-[2/3]" />
           ))}

@@ -45,7 +45,7 @@ export default function FavoritesPage() {
         <FilterBar options={typeOptions} value={type} onChange={setType} allLabel="Tümü" />
       )}
 
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-x-5 gap-y-7 px-5 pt-6 lg:px-8">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-x-3 gap-y-5 sm:gap-x-5 sm:gap-y-7 px-4 sm:px-5 pt-6 lg:px-8">
         {filtered.map((entry) => (
           <ContentCard
             key={entry.id}

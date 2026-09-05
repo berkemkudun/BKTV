@@ -22,7 +22,7 @@ import type MpegtsPlayerType from "mpegts.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { type Diagnosis, diagnose, probeStream } from "@/lib/player/diagnose";
-import { type StreamCandidate, buildSourceCandidates } from "@/lib/player/stream";
+import { type StreamCandidate, buildSourceCandidates, detectEnvironment } from "@/lib/player/stream";
 import { languageLabel, subtitleFileToUrl } from "@/lib/player/subtitles";
 
 export interface VideoPlayerProps {
@@ -83,9 +83,10 @@ export function VideoPlayer({
   const [position, setPosition] = useState(0);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
+  /** Otomatik oynatma sesli reddedilince sessize aldık: kullanıcıya söylemek gerekiyor. */
+  const [autoMuted, setAutoMuted] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [failed, setFailed] = useState(false);
   /** Tarayıcının kendi hata metni — kodek sorunlarını ayırt etmek için tanıya besleniyor. */
   const [mediaErrorMessage, setMediaErrorMessage] = useState<string | undefined>(undefined);
 
@@ -103,6 +104,11 @@ export function VideoPlayer({
 
   // ---- Kaynak adayları: HLS varyantı → doğrudan → proxy ------------------
   const candidates = useMemo(() => buildSourceCandidates(src, useProxy), [src, useProxy]);
+  /** Sayfa https, yayın http: doğrudan bağlantı tarayıcıda engellenir — kullanıcıya söylüyoruz. */
+  const mixedContent = useMemo(
+    () => typeof window !== "undefined" && detectEnvironment(src).insecurePage,
+    [src],
+  );
   const [candidateIndex, setCandidateIndex] = useState(0);
 
   // src değişince aday zincirini render sırasında başa sar.
@@ -110,28 +116,48 @@ export function VideoPlayer({
   if (trackedSrc !== src) {
     setTrackedSrc(src);
     setCandidateIndex(0);
-    setFailed(false);
+    setMediaErrorMessage(undefined);
   }
 
+  /**
+   * Aday index'i listenin sonunu geçtiyse denenecek kaynak kalmamıştır.
+   * "failed" ayrı bir state değil: iki state'i senkron tutmak yerine tek
+   * sayaçtan türetiliyor (hata ekranı ile aday zinciri asla ayrışmıyor).
+   */
+  const failed = candidateIndex >= candidates.length;
   const candidate: StreamCandidate | undefined = candidates[candidateIndex];
 
-  /** Bu adayda hata alındı: sıradakine geç, bittiyse hata ekranı göster. */
+  /** Bu adayda hata alındı: sıradakine geç. */
   const failCandidate = useCallback(() => {
-    setCandidateIndex((index) => {
-      if (index + 1 < candidates.length) return index + 1;
-      setFailed(true);
-      setBuffering(false);
-      return index;
-    });
-  }, [candidates.length]);
+    setCandidateIndex((index) => index + 1);
+  }, []);
 
   // ---- Motoru bağla ------------------------------------------------------
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !candidate || failed) return;
+    if (!video || !candidate) return;
 
     let disposed = false;
     tearingDown.current = false;
+
+    /**
+     * Bekçi: bazı IPTV adresleri bağlantıyı açık tutup hiç veri göndermiyor.
+     * Bu durumda ne "error" olayı ne de hls.js hatası gelir; ekran sonsuza kadar
+     * dönen bir spinner'da kalırdı. 15 saniyede ilk kare gelmezse sıradaki adaya geç.
+     */
+    let watchdog: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      watchdog = null;
+      if (disposed) return;
+      if (video.readyState >= 2) return;
+      failCandidate();
+    }, 15000);
+
+    const clearWatchdog = () => {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = null;
+    };
+    video.addEventListener("loadeddata", clearWatchdog);
+    video.addEventListener("playing", clearWatchdog);
     setBuffering(true);
     setLevels([]);
     setAudioTracks([]);
@@ -153,10 +179,24 @@ export function VideoPlayer({
       }
     };
 
+    /**
+     * Tarayıcılar sesli otomatik oynatmayı engelliyor: play() reddedilince
+     * yayını "açılmadı" saymak yerine sessize alıp bir kez daha deniyoruz.
+     */
+    const attemptPlay = () => {
+      if (!autoPlay) return;
+      void video.play().catch(() => {
+        video.muted = true;
+        setMuted(true);
+        setAutoMuted(true);
+        void video.play().catch(() => setPlaying(false));
+      });
+    };
+
     const startNative = () => {
       video.src = candidate.url;
       if (startPosition > 0 && !isLive) video.currentTime = startPosition;
-      if (autoPlay) void video.play().catch(() => setPlaying(false));
+      attemptPlay();
     };
 
     const nativeHls = video.canPlayType("application/vnd.apple.mpegurl") !== "";
@@ -205,7 +245,7 @@ export function VideoPlayer({
           }
 
           if (startPosition > 0 && !isLive) video.currentTime = startPosition;
-          if (autoPlay) void video.play().catch(() => setPlaying(false));
+          attemptPlay();
         });
 
         // Ses ve altyazı parçaları manifest içinde gelir.
@@ -230,10 +270,26 @@ export function VideoPlayer({
 
         hls.on(HlsModule.Events.LEVEL_SWITCHED, (_event, data) => setCurrentLevel(data.level));
 
+        /**
+         * Canlı yayında tek bir segment hatası tüm zinciri düşürmemeli: yayın
+         * başladıktan sonraki ağ hatasında bir kez toparlanmayı dene.
+         * Manifest hiç yüklenemediyse (CORS / 503) beklemenin anlamı yok —
+         * hemen sıradaki adaya geçilir.
+         */
+        let networkRetried = false;
         hls.on(HlsModule.Events.ERROR, (_event, data) => {
           if (!data.fatal) return;
           if (data.type === HlsModule.ErrorTypes.MEDIA_ERROR) {
             hls.recoverMediaError();
+            return;
+          }
+          const manifestFailed =
+            data.details === HlsModule.ErrorDetails.MANIFEST_LOAD_ERROR ||
+            data.details === HlsModule.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
+            data.details === HlsModule.ErrorDetails.MANIFEST_PARSING_ERROR;
+          if (data.type === HlsModule.ErrorTypes.NETWORK_ERROR && !manifestFailed && !networkRetried) {
+            networkRetried = true;
+            hls.startLoad();
             return;
           }
           cleanup();
@@ -262,6 +318,10 @@ export function VideoPlayer({
             liveBufferLatencyChasing: true,
             lazyLoad: false,
             fixAudioTimestampGap: true,
+            // Stash buffer ilk kareyi geciktiriyor; canlı yayında görüntü
+            // gelene kadar geçen süre belirgin şekilde kısalıyor.
+            enableStashBuffer: false,
+            stashInitialSize: 128,
           },
         );
         mpegtsRef.current = player;
@@ -273,7 +333,7 @@ export function VideoPlayer({
 
         player.attachMediaElement(video);
         player.load();
-        if (autoPlay) void player.play()?.catch?.(() => setPlaying(false));
+        attemptPlay();
       })();
     } else {
       startNative();
@@ -282,13 +342,16 @@ export function VideoPlayer({
     return () => {
       disposed = true;
       tearingDown.current = true;
+      clearWatchdog();
+      video.removeEventListener("loadeddata", clearWatchdog);
+      video.removeEventListener("playing", clearWatchdog);
       cleanup();
       video.removeAttribute("src");
       video.load();
     };
     // startPosition kasıtlı olarak dependency değil: her seek'te kaynağı yeniden bağlamamalı.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidate?.url, candidate?.kind, failed, isLive, autoPlay, preferredQuality, failCandidate]);
+  }, [candidate?.url, candidate?.kind, isLive, autoPlay, preferredQuality, failCandidate]);
 
   // ---- Video olayları ---------------------------------------------------
   useEffect(() => {
@@ -322,6 +385,8 @@ export function VideoPlayer({
     const onVolume = () => {
       setVolume(video.volume);
       setMuted(video.muted);
+      // Kullanıcı sesi kendisi açtıysa "sessiz başladı" uyarısı kalkmalı.
+      if (!video.muted) setAutoMuted(false);
     };
     const onEndedEvent = () => onEnded?.();
 
@@ -526,6 +591,35 @@ export function VideoPlayer({
         ))}
       </video>
 
+      {autoMuted && muted && !failed && (
+        <button
+          type="button"
+          onClick={() => {
+            const video = videoRef.current;
+            if (!video) return;
+            video.muted = false;
+            setAutoMuted(false);
+            void video.play().catch(() => {});
+          }}
+          className="absolute left-1/2 top-[68px] z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/70 px-4 py-2 text-[13px] font-semibold backdrop-blur-sm"
+        >
+          <VolumeX className="h-4 w-4" /> Ses kapalı başladı — açmak için dokun
+        </button>
+      )}
+
+      {!playing && !buffering && !failed && (
+        <button
+          type="button"
+          onClick={togglePlay}
+          aria-label="Oynat"
+          className="absolute inset-0 z-10 grid place-items-center"
+        >
+          <span className="grid h-16 w-16 place-items-center rounded-full bg-black/55 ring-1 ring-white/25 backdrop-blur-sm">
+            <Play className="h-7 w-7 translate-x-[2px] fill-white text-white" />
+          </span>
+        </button>
+      )}
+
       {buffering && !failed && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <Loader2 className="h-12 w-12 animate-spin text-white/80" />
@@ -536,22 +630,19 @@ export function VideoPlayer({
         <FailureScreen
           src={src}
           mediaErrorMessage={mediaErrorMessage}
+          mixedContent={mixedContent}
           onBack={onBack}
-          onRetry={() => {
-            setFailed(false);
-            setCandidateIndex(0);
-          }}
+          onRetry={() => setCandidateIndex(0)}
           onRetryWithProxy={() => {
-            setFailed(false);
-            // Proxy'li adaylar zincirin ikinci yarısında.
-            setCandidateIndex(candidates.findIndex((candidate) => candidate.viaProxy));
+            const proxyIndex = candidates.findIndex((item) => item.viaProxy);
+            if (proxyIndex >= 0) setCandidateIndex(proxyIndex);
           }}
         />
       )}
 
       {/* Üst bar */}
       <div
-        className={`absolute inset-x-0 top-0 z-20 flex items-start gap-4 bg-gradient-to-b from-black/85 to-transparent p-5 transition-opacity duration-300 ${
+        className={`absolute inset-x-0 top-0 z-20 flex items-start gap-3 bg-gradient-to-b from-black/85 to-transparent p-4 pt-[max(16px,env(safe-area-inset-top))] transition-opacity duration-300 sm:gap-4 sm:p-5 ${
           controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       >
@@ -566,8 +657,8 @@ export function VideoPlayer({
           </button>
         )}
         <div className="min-w-0">
-          <h1 className="truncate text-[18px] font-bold">{title}</h1>
-          {subtitle && <p className="truncate text-[13px] text-fg-muted">{subtitle}</p>}
+          <h1 className="truncate text-[15px] font-bold sm:text-[18px]">{title}</h1>
+          {subtitle && <p className="truncate text-[12px] text-fg-muted sm:text-[13px]">{subtitle}</p>}
         </div>
         {isLive && (
           <span className="ml-auto flex shrink-0 items-center gap-1.5 rounded-full bg-accent px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide">
@@ -578,7 +669,7 @@ export function VideoPlayer({
 
       {/* Alt kontroller */}
       <div
-        className={`absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-5 pb-5 pt-16 transition-opacity duration-300 ${
+        className={`absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 pb-[max(14px,env(safe-area-inset-bottom))] pt-14 transition-opacity duration-300 sm:px-5 sm:pb-5 sm:pt-16 ${
           controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       >
@@ -623,7 +714,7 @@ export function VideoPlayer({
             </>
           )}
 
-          <div className="group/volume flex items-center gap-2">
+          <div className="group/volume flex items-center gap-2 max-sm:gap-0">
             <ControlButton
               onClick={() => {
                 const video = videoRef.current;
@@ -650,7 +741,7 @@ export function VideoPlayer({
                 video.muted = Number(event.target.value) === 0;
               }}
               aria-label="Ses seviyesi"
-              className="h-1 w-0 cursor-pointer appearance-none rounded-full bg-white/25 opacity-0 transition-all duration-300 group-hover/volume:w-20 group-hover/volume:opacity-100 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+              className="hidden h-1 w-0 cursor-pointer appearance-none rounded-full bg-white/25 opacity-0 transition-all duration-300 group-hover/volume:w-20 group-hover/volume:opacity-100 sm:block [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
             />
           </div>
 
@@ -796,12 +887,15 @@ export function VideoPlayer({
 function FailureScreen({
   src,
   mediaErrorMessage,
+  mixedContent,
   onBack,
   onRetry,
   onRetryWithProxy,
 }: {
   src: string;
   mediaErrorMessage?: string;
+  /** Sayfa https, yayın http: doğrudan bağlantı zaten tarayıcı tarafından engellendi */
+  mixedContent?: boolean;
   onBack?: () => void;
   onRetry: () => void;
   onRetryWithProxy: () => void;
@@ -838,6 +932,14 @@ function FailureScreen({
               <Loader2 className="h-4 w-4 animate-spin" /> Sebep araştırılıyor…
             </p>
           </>
+        )}
+
+        {mixedContent && (
+          <p className="mt-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[12.5px] leading-relaxed text-fg-muted">
+            Bu sayfa https, yayın adresi ise http. Tarayıcı böyle bir yayını doğrudan açamıyor; bu yüzden
+            yayın otomatik olarak sunucu üzerinden (proxy) aktarılıyor. Sağlayıcı yavaşsa ilk açılış birkaç
+            saniye sürebilir.
+          </p>
         )}
 
         <div className="mt-5 flex flex-wrap justify-center gap-3">

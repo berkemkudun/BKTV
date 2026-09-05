@@ -29,18 +29,18 @@ export function Header() {
   const total = counts.movie + counts.live + counts.sports + counts.news + counts.kids;
 
   return (
-    <header className="sticky top-0 z-30 flex h-[72px] items-center gap-4 border-b border-white/5 bg-ink-950/80 px-5 backdrop-blur-xl lg:px-8">
+    <header className="sticky top-0 z-30 flex h-[60px] items-center gap-2 border-b border-white/5 bg-ink-950/85 px-3 backdrop-blur-xl sm:h-[72px] sm:gap-4 sm:px-5 lg:px-8">
       <button
         type="button"
         onClick={toggleSidebar}
-        className="rounded-lg p-2 text-fg-muted transition-colors hover:bg-white/5 hover:text-fg lg:hidden"
+        className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-fg-muted transition-colors hover:bg-white/5 hover:text-fg lg:hidden"
         aria-label="Menüyü aç"
       >
         <Menu className="h-5 w-5" />
       </button>
 
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-[19px] font-bold tracking-tight">{title}</h1>
+        <h1 className="truncate text-[17px] font-bold tracking-tight sm:text-[19px]">{title}</h1>
         {pathname === "/" && total > 0 && (
           <p className="hidden text-[12.5px] text-fg-dim sm:block">
             Kütüphanende {total.toLocaleString("tr-TR")} içerik hazır
@@ -48,9 +48,12 @@ export function Header() {
         )}
       </div>
 
-      <Suspense fallback={<div className="h-11 w-[280px]" />}>
+      <Suspense fallback={<div className="hidden h-11 w-[280px] md:block" />}>
         <HeaderSearch />
       </Suspense>
+
+      {/* Mobilde arama kutusu yerine ayrı sayfaya götüren ikon */}
+      <MobileSearchLink />
 
       <button
         type="button"
@@ -109,7 +112,11 @@ function HeaderSearch() {
 
 export function MobileSearchLink() {
   return (
-    <Link href="/search" className="rounded-lg p-2 text-fg-muted hover:bg-white/5 md:hidden">
+    <Link
+      href="/search"
+      aria-label="Ara"
+      className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-fg-muted transition-colors hover:bg-white/5 hover:text-fg md:hidden"
+    >
       <Search className="h-5 w-5" />
     </Link>
   );

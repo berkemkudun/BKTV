@@ -12,7 +12,7 @@ export function ChannelTile({ channel }: { channel: ContentItem }) {
   return (
     <Link
       href={`/watch/${channel.id}`}
-      className="group relative w-[190px] shrink-0 focus:outline-none xl:w-[210px]"
+      className="group relative w-[152px] shrink-0 focus:outline-none sm:w-[190px] xl:w-[210px]"
     >
       <div className="relative overflow-hidden rounded-[var(--radius-card)] border border-white/8 bg-ink-800 transition-all duration-300 group-hover:-translate-y-1 group-hover:border-white/20">
         <SmartImage

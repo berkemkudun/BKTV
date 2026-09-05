@@ -22,7 +22,7 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="px-5 pb-12 pt-6 lg:px-8">
+    <div className="px-4 sm:px-5 pb-12 pt-6 lg:px-8">
       <div className="mb-6 flex items-center justify-between gap-4">
         <p className="text-[14px] text-fg-muted">{history.length} içerik</p>
         <button
@@ -34,7 +34,7 @@ export default function HistoryPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-5">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 sm:gap-5">
         {history.map((progress) => (
           <ProgressCard key={progress.contentId} progress={progress} fill />
         ))}

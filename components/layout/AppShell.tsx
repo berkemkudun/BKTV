@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
 import { Header } from "@/components/layout/Header";
+import { MobileNav } from "@/components/layout/MobileNav";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { AddPlaylistDialog } from "@/components/playlist/AddPlaylistDialog";
 import { useLibraryStore } from "@/lib/store/libraryStore";
@@ -42,8 +43,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col lg:pl-[264px]">
         <Header />
-        <main className="min-w-0 flex-1 pb-24">{children}</main>
+        {/* Alt gezinme mobilde sabit duruyor: içeriğin son satırı altında kalmasın. */}
+        <main className="min-w-0 flex-1 pb-[calc(78px+env(safe-area-inset-bottom))] lg:pb-16">
+          {children}
+        </main>
       </div>
+      <MobileNav />
       <AddPlaylistDialog />
     </div>
   );

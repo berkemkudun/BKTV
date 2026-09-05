@@ -65,7 +65,7 @@ export function HeroBanner({ entries }: { entries: HeroEntry[] }) {
   if (!entry) return null;
 
   return (
-    <section className="px-5 pt-5 lg:px-8">
+    <section className="px-4 pt-4 sm:px-5 sm:pt-5 lg:px-8">
       <HeroSlide key={entry.id} entry={entry} />
 
       {entries.length > 1 && (
@@ -98,7 +98,7 @@ function HeroSlide({ entry }: { entry: HeroEntry }) {
   const heroColors = fallbackColors(entry.title);
 
   return (
-    <div className="animate-fade-up relative h-[380px] overflow-hidden rounded-3xl border border-white/8 xl:h-[440px] 2xl:h-[500px]">
+    <div className="animate-fade-up relative h-[300px] overflow-hidden rounded-2xl border border-white/8 sm:h-[380px] sm:rounded-3xl xl:h-[440px] 2xl:h-[500px]">
       {/*
         Görsel varsa (TMDB backdrop ya da M3U logosu) onu göster; yoksa başlıktan
         türetilmiş sinematik bir gradient kullan — boş siyah kutu yerine.
@@ -122,7 +122,7 @@ function HeroSlide({ entry }: { entry: HeroEntry }) {
             background: `radial-gradient(130% 120% at 82% 20%, ${heroColors[0]} 0%, ${heroColors[1]} 55%, #08080e 100%)`,
           }}
         >
-          <span className="absolute -right-4 bottom-0 select-none text-[190px] font-black leading-none tracking-tighter text-white/10 lg:text-[260px]">
+          <span className="absolute -right-4 bottom-0 select-none text-[120px] font-black leading-none tracking-tighter text-white/10 sm:text-[190px] lg:text-[260px]">
             {entry.title.slice(0, 1).toLocaleUpperCase("tr-TR")}
           </span>
         </div>
@@ -131,14 +131,14 @@ function HeroSlide({ entry }: { entry: HeroEntry }) {
       <div className="absolute inset-0 bg-gradient-to-r from-ink-950 via-ink-950/80 to-transparent" />
       <div className="absolute inset-0 bg-gradient-to-t from-ink-950 via-transparent to-transparent" />
 
-      <div className="relative flex h-full max-w-[620px] flex-col justify-end p-7 lg:p-10">
+      <div className="relative flex h-full max-w-[620px] flex-col justify-end p-5 sm:p-7 lg:p-10">
         {entry.badge && (
           <span className="mb-3 w-fit rounded-full bg-accent/15 px-3 py-1 text-[11.5px] font-bold uppercase tracking-wider text-accent">
             {entry.badge}
           </span>
         )}
 
-        <h2 className="text-balance text-[38px] font-extrabold leading-[1.05] tracking-tight lg:text-[52px]">
+        <h2 className="text-balance text-[27px] font-extrabold leading-[1.08] tracking-tight sm:text-[38px] lg:text-[52px]">
           {match?.title ?? entry.title}
         </h2>
 
@@ -154,21 +154,21 @@ function HeroSlide({ entry }: { entry: HeroEntry }) {
         </div>
 
         {overview && (
-          <p className="mt-4 line-clamp-3 max-w-[520px] text-[14.5px] leading-relaxed text-fg-muted">
+          <p className="mt-3 line-clamp-2 max-w-[520px] text-[13.5px] leading-relaxed text-fg-muted sm:mt-4 sm:line-clamp-3 sm:text-[14.5px]">
             {overview}
           </p>
         )}
 
-        <div className="mt-6 flex flex-wrap items-center gap-3">
+        <div className="mt-4 flex flex-wrap items-center gap-2.5 sm:mt-6 sm:gap-3">
           <Link
             href={entry.playHref}
-            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-accent to-accent-600 px-6 py-3.5 text-[15px] font-bold text-white shadow-[var(--shadow-accent)] transition-transform hover:scale-[1.03]"
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-accent to-accent-600 px-5 py-3 text-[14.5px] font-bold text-white shadow-[var(--shadow-accent)] transition-transform hover:scale-[1.03] sm:px-6 sm:py-3.5 sm:text-[15px]"
           >
             <Play className="h-[18px] w-[18px] fill-white" /> Hemen İzle
           </Link>
           <Link
             href={entry.detailHref}
-            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-3.5 text-[15px] font-semibold backdrop-blur-sm transition-colors hover:bg-white/10"
+            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[14.5px] font-semibold backdrop-blur-sm transition-colors hover:bg-white/10 sm:px-5 sm:py-3.5 sm:text-[15px]"
           >
             <Info className="h-[18px] w-[18px]" /> Detaylar
           </Link>
@@ -179,7 +179,7 @@ function HeroSlide({ entry }: { entry: HeroEntry }) {
             poster={match?.poster}
             logo={entry.logo}
             variant="button"
-            className="px-5 py-3.5"
+            className="px-4 sm:px-5 py-3.5"
           />
         </div>
       </div>
